@@ -55,21 +55,29 @@ export function AdminSidebar({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen">
-        <Sidebar>
-          <SidebarHeader className="flex items-center gap-2 px-4 py-2">
+      <div className="flex min-h-screen min-w-full bg-slate-50">
+        <Sidebar className="w-64 bg-white border-r shadow-sm flex flex-col justify-between">
+          <SidebarHeader className="flex items-center gap-2 px-6 py-6 border-b">
             <Link href="/admin" className="flex items-center gap-2">
-              <ShieldAlert className="h-6 w-6 text-pink-500" />
-              <span className="text-xl font-bold">Admin Panel</span>
+              <ShieldAlert className="h-7 w-7 text-pink-500" />
+              <span className="text-2xl font-bold tracking-tight">Admin Panel</span>
             </Link>
           </SidebarHeader>
-          <SidebarContent>
-            <SidebarMenu>
+          <SidebarContent className="flex-1 px-2 py-6">
+            <SidebarMenu className="space-y-1">
               {routes.map((route) => (
                 <SidebarMenuItem key={route.href}>
-                  <SidebarMenuButton asChild isActive={pathname === route.href}>
-                    <Link href={route.href}>
-                      <route.icon className="h-5 w-5" />
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname === route.href}
+                    className={`group flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
+                      pathname === route.href
+                        ? "bg-pink-50 text-pink-600 font-semibold"
+                        : "hover:bg-slate-100 text-slate-700"
+                    }`}
+                  >
+                    <Link href={route.href} className="flex items-center gap-3 w-full">
+                      <route.icon className={`h-5 w-5 ${pathname === route.href ? "text-pink-500" : "text-slate-500 group-hover:text-pink-500"}`} />
                       <span>{route.title}</span>
                     </Link>
                   </SidebarMenuButton>
@@ -77,11 +85,20 @@ export function AdminSidebar({ children }: { children: React.ReactNode }) {
               ))}
             </SidebarMenu>
           </SidebarContent>
-          <SidebarFooter>
+          <SidebarFooter className="px-6 py-6 border-t flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-slate-200 flex items-center justify-center">
+                <Users className="h-5 w-5 text-slate-500" />
+              </div>
+              <div>
+                <div className="font-medium leading-tight">Admin</div>
+                <Link href="/admin/profile" className="text-xs text-muted-foreground hover:underline">View Profile</Link>
+              </div>
+            </div>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <Link href="/logout">
+                  <Link href="/logout" className="flex items-center gap-3 text-red-500 hover:text-red-600">
                     <LogOut className="h-5 w-5" />
                     <span>Logout</span>
                   </Link>
@@ -90,22 +107,13 @@ export function AdminSidebar({ children }: { children: React.ReactNode }) {
             </SidebarMenu>
           </SidebarFooter>
         </Sidebar>
-        <div className="flex-1">
-          <div className="flex h-16 items-center gap-4 border-b bg-background px-6">
+        <main className="flex-1 min-h-screen flex flex-col">
+          <div className="flex h-16 items-center gap-4 border-b bg-background px-8">
             <SidebarTrigger />
-            <div className="ml-auto flex items-center gap-4">
-              <Link href="/admin/profile">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center">
-                    <Users className="h-4 w-4 text-slate-500" />
-                  </div>
-                  <span className="text-sm font-medium">Admin</span>
-                </div>
-              </Link>
-            </div>
+            <div className="ml-auto flex items-center gap-4" />
           </div>
-          <div className="p-6">{children}</div>
-        </div>
+          <div className="flex-1 p-8 overflow-auto">{children}</div>
+        </main>
       </div>
     </SidebarProvider>
   )

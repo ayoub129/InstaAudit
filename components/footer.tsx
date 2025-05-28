@@ -1,5 +1,34 @@
 import Link from "next/link"
 import { Instagram } from "lucide-react"
+import { useRouter, usePathname } from "next/navigation"
+
+function ScrollLink({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) {
+  const router = useRouter()
+  const pathname = usePathname()
+
+  console.log("in")
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault()
+    const targetId = href.split('#')[1]
+    console.log(pathname)
+    if (pathname !== '/') {
+      // If we're not on the home page, navigate to home page with hash
+      router.push(`/#${targetId}`)
+    } else {
+      // If we're already on the home page, just scroll
+      const element = document.getElementById(targetId)
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth' })
+      }
+    }
+  }
+
+  return (
+    <a href={href} onClick={handleClick} className={className}>
+      {children}
+    </a>
+  )
+}
 
 export function LandingFooter() {
   return (
@@ -39,29 +68,19 @@ export function LandingFooter() {
             </Link>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4">
           <div className="space-y-3">
             <h3 className="text-sm font-medium">Product</h3>
             <ul className="space-y-2">
               <li>
-                <Link href="#features" className="text-sm text-muted-foreground hover:text-foreground">
+                <ScrollLink href="#features" className="text-sm text-muted-foreground hover:text-foreground">
                   Features
-                </Link>
+                </ScrollLink>
               </li>
               <li>
-                <Link href="#pricing" className="text-sm text-muted-foreground hover:text-foreground">
+                <ScrollLink href="#pricing" className="text-sm text-muted-foreground hover:text-foreground">
                   Pricing
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Integrations
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Changelog
-                </Link>
+                </ScrollLink>
               </li>
             </ul>
           </div>
@@ -69,48 +88,13 @@ export function LandingFooter() {
             <h3 className="text-sm font-medium">Company</h3>
             <ul className="space-y-2">
               <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+                <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground">
                   About
                 </Link>
               </li>
               <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Blog
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Careers
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+                <Link href="/contact" className="text-sm text-muted-foreground hover:text-foreground">
                   Contact
-                </Link>
-              </li>
-            </ul>
-          </div>
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium">Resources</h3>
-            <ul className="space-y-2">
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Documentation
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Guides
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Support
-                </Link>
-              </li>
-              <li>
-                <Link href="#faq" className="text-sm text-muted-foreground hover:text-foreground">
-                  FAQ
                 </Link>
               </li>
             </ul>
@@ -119,24 +103,19 @@ export function LandingFooter() {
             <h3 className="text-sm font-medium">Legal</h3>
             <ul className="space-y-2">
               <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+                <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground">
                   Terms
                 </Link>
               </li>
               <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+                <Link href="/privacy" className="text-sm text-muted-foreground hover:text-foreground">
                   Privacy
                 </Link>
               </li>
               <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Cookies
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Licenses
-                </Link>
+                <ScrollLink href="#faq" className="text-sm text-muted-foreground hover:text-foreground">
+                  FAQ
+                </ScrollLink>
               </li>
             </ul>
           </div>
@@ -161,14 +140,11 @@ export function LandingFooter() {
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-t pt-8">
           <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} InstaAudit. All rights reserved.</p>
           <div className="flex gap-4">
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+            <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground">
               Terms
             </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+            <Link href="/privacy" className="text-sm text-muted-foreground hover:text-foreground">
               Privacy
-            </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              Cookies
             </Link>
           </div>
         </div>

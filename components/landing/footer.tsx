@@ -39,7 +39,7 @@ export function LandingFooter() {
             </Link>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4">
           <div className="space-y-3">
             <h3 className="text-sm font-medium">Product</h3>
             <ul className="space-y-2">
@@ -53,89 +53,39 @@ export function LandingFooter() {
                   Pricing
                 </Link>
               </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Integrations
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Changelog
-                </Link>
-              </li>
             </ul>
           </div>
           <div className="space-y-3">
             <h3 className="text-sm font-medium">Company</h3>
             <ul className="space-y-2">
               <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+                <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground">
                   About
                 </Link>
               </li>
               <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Blog
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Careers
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+                <Link href="/contact" className="text-sm text-muted-foreground hover:text-foreground">
                   Contact
                 </Link>
               </li>
             </ul>
           </div>
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium">Resources</h3>
-            <ul className="space-y-2">
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Documentation
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Guides
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Support
-                </Link>
-              </li>
-              <li>
-                <Link href="#faq" className="text-sm text-muted-foreground hover:text-foreground">
-                  FAQ
-                </Link>
-              </li>
-            </ul>
-          </div>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <h3 className="text-sm font-medium">Legal</h3>
             <ul className="space-y-2">
               <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+                <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground">
                   Terms
                 </Link>
               </li>
               <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+                <Link href="/privacy" className="text-sm text-muted-foreground hover:text-foreground">
                   Privacy
                 </Link>
               </li>
               <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Cookies
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Licenses
+                <Link href="#faq" className="text-sm text-muted-foreground hover:text-foreground">
+                  Faq
                 </Link>
               </li>
             </ul>
@@ -166,9 +116,6 @@ export function LandingFooter() {
             </Link>
             <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
               Privacy
-            </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              Cookies
             </Link>
           </div>
         </div>

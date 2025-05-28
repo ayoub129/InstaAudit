@@ -1,6 +1,34 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Instagram } from "lucide-react"
+import { useRouter, usePathname } from "next/navigation"
+
+function ScrollLink({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) {
+  const router = useRouter()
+  const pathname = usePathname()
+
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault()
+    const targetId = href.split('#')[1]
+    
+    if (pathname !== '/') {
+      // If we're not on the home page, navigate to home page with hash
+      router.push(`/#${targetId}`)
+    } else {
+      // If we're already on the home page, just scroll
+      const element = document.getElementById(targetId)
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth' })
+      }
+    }
+  }
+
+  return (
+    <a href={href} onClick={handleClick} className={className}>
+      {children}
+    </a>
+  )
+}
 
 export function LandingHeader() {
   return (
@@ -11,18 +39,18 @@ export function LandingHeader() {
           <span className="text-xl font-bold">InstaAudit</span>
         </Link>
         <nav className="hidden gap-6 md:flex">
-          <Link href="#features" className="text-sm font-medium transition-colors hover:text-primary">
+          <ScrollLink href="#features" className="text-sm font-medium transition-colors hover:text-primary">
             Features
-          </Link>
-          <Link href="#testimonials" className="text-sm font-medium transition-colors hover:text-primary">
+          </ScrollLink>
+          <ScrollLink href="#testimonials" className="text-sm font-medium transition-colors hover:text-primary">
             Testimonials
-          </Link>
-          <Link href="#pricing" className="text-sm font-medium transition-colors hover:text-primary">
+          </ScrollLink>
+          <ScrollLink href="#pricing" className="text-sm font-medium transition-colors hover:text-primary">
             Pricing
-          </Link>
-          <Link href="#faq" className="text-sm font-medium transition-colors hover:text-primary">
+          </ScrollLink>
+          <ScrollLink href="#faq" className="text-sm font-medium transition-colors hover:text-primary">
             FAQ
-          </Link>
+          </ScrollLink>
         </nav>
         <div className="flex items-center gap-4">
           <Link href="/login">

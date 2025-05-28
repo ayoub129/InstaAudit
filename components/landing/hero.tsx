@@ -33,7 +33,7 @@ export function LandingHero() {
           <div className="flex items-center justify-center">
             <div className="relative h-[350px] w-[350px] sm:h-[400px] sm:w-[400px] lg:h-[500px] lg:w-[500px]">
               <Image
-                src="/placeholder.svg?height=500&width=500"
+                src="/hero.png?height=500&width=500"
                 alt="InstaAudit Dashboard Preview"
                 fill
                 className="object-contain"

@@ -83,7 +83,7 @@ export function LandingPricing() {
           {plans.map((plan) => (
             <Card
               key={plan.name}
-              className={`flex flex-col ${plan.popular ? "border-pink-500 shadow-lg" : "border shadow-sm"}`}
+              className={`flex flex-col ${plan.popular ? "border-pink-500 relative shadow-lg" : "border shadow-sm"}`}
             >
               {plan.popular && (
                 <div className="absolute top-0 right-0 -mt-2 -mr-2 rounded-full bg-pink-500 px-3 py-1 text-xs font-medium text-white">
