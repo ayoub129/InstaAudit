@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import { connectDB } from "@/lib/mongodb"
 import { User } from "@/models/User"
+import { hashToken } from "@/lib/security/tokens"
 import { z } from "zod"
 
 const resetPasswordSchema = z.object({
@@ -26,12 +27,13 @@ export async function POST(request: Request) {
     }
 
     const token = parsed.data.token.trim()
+    const tokenHash = hashToken(token)
     const password = parsed.data.password
 
     await connectDB()
 
     const user = await User.findOne({
-      resetPasswordToken: token,
+      resetPasswordToken: tokenHash,
       resetPasswordTokenExpires: { $gt: new Date() },
     })
 

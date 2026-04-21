@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { connectDB } from "@/lib/mongodb"
 import { User } from "@/models/User"
+import { hashToken } from "@/lib/security/tokens"
 
 function getRedirectUrl(path: string, request: Request) {
   try {
@@ -21,11 +22,13 @@ export async function GET(request: Request) {
     )
   }
 
+  const tokenHash = hashToken(token)
+
   try {
     await connectDB()
 
     const user = await User.findOne({
-      verificationToken: token,
+      verificationToken: tokenHash,
       verificationTokenExpires: { $gt: new Date() },
     })
 

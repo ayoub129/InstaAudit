@@ -9,7 +9,10 @@ export function getUserPlan(user?: UserLike | null): PlanKey {
   const plan = user?.subscriptionPlan
   const status = user?.subscriptionStatus
 
-  if (plan === "starter" || plan === "pro" || plan === "agency" && status === "active") {
+  if (
+    status === "active" &&
+    (plan === "starter" || plan === "pro" || plan === "agency")
+  ) {
     return plan
   }
 

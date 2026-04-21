@@ -4,12 +4,17 @@ import { authOptions } from "@/lib/auth"
 import { connectDB } from "@/lib/mongodb"
 import { User } from "@/models/User"
 import { getPayPalAccessToken, PAYPAL_BASE } from "@/lib/paypal"
+import { trackEvent } from "@/lib/analytics/track-event"
 
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
+      await trackEvent({
+        eventName: "subscription_cancel_unauthorized",
+        request,
+      })
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
@@ -21,10 +26,21 @@ export async function POST(request: Request) {
     const user = await User.findById(session.user.id)
 
     if (!user) {
+      await trackEvent({
+        eventName: "subscription_cancel_user_not_found",
+        userId: session.user.id,
+        request,
+      })
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
     if (user.subscriptionStatus !== "active" && user.subscriptionStatus !== "trialing") {
+      await trackEvent({
+        eventName: "subscription_cancel_not_active",
+        userId: String(user._id),
+        properties: { subscriptionStatus: user.subscriptionStatus },
+        request,
+      })
       return NextResponse.json(
         { error: "No active subscription to cancel" },
         { status: 400 }
@@ -34,6 +50,11 @@ export async function POST(request: Request) {
     const subscriptionId = user.providerSubscriptionId
 
     if (!subscriptionId) {
+      await trackEvent({
+        eventName: "subscription_cancel_missing_provider_id",
+        userId: String(user._id),
+        request,
+      })
       return NextResponse.json(
         { error: "No PayPal subscription ID found on your account" },
         { status: 400 }
@@ -63,6 +84,16 @@ export async function POST(request: Request) {
         errMsg = errData?.message || errMsg
       } catch {}
       console.error("[paypal/cancel] PayPal error:", paypalRes.status, errMsg)
+      await trackEvent({
+        eventName: "subscription_cancel_paypal_failed",
+        userId: String(user._id),
+        properties: {
+          paypalStatus: paypalRes.status,
+          reason,
+          error: errMsg,
+        },
+        request,
+      })
       return NextResponse.json({ error: errMsg }, { status: 502 })
     }
 
@@ -70,6 +101,16 @@ export async function POST(request: Request) {
     user.subscriptionStatus = "canceled"
     user.cancelAtPeriodEnd = true
     await user.save()
+
+    await trackEvent({
+      eventName: "subscription_canceled",
+      userId: String(user._id),
+      properties: {
+        reason,
+        subscriptionId,
+      },
+      request,
+    })
 
     console.log(
       `[paypal/cancel] Subscription ${subscriptionId} canceled for user ${session.user.id}`
@@ -83,6 +124,13 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error("[paypal/cancel] Unexpected error:", error)
+    await trackEvent({
+      eventName: "subscription_cancel_failed_unexpected",
+      properties: {
+        error: error instanceof Error ? error.message : "unknown_error",
+      },
+      request,
+    })
     return NextResponse.json(
       { error: "Failed to cancel subscription" },
       { status: 500 }

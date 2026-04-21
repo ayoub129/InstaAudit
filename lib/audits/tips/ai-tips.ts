@@ -1,6 +1,6 @@
 import OpenAI from "openai"
 import type { ProfileData } from "@/lib/instagram/types"
-import type { ScoredMetrics } from "@/lib/audits/scoring/index"
+import type { ScoredMetrics } from "@/lib/audits/metrics"
 import type { PlanKey } from "@/lib/plans/plan-config"
 
 export interface DayPlan {

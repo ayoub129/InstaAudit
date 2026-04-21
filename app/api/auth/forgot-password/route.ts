@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
-import crypto from "crypto"
 import { z } from "zod"
 import { connectDB } from "@/lib/mongodb"
 import { User } from "@/models/User"
 import { sendPasswordResetEmail } from "@/lib/email"
+import { generateSecureToken, hashToken } from "@/lib/security/tokens"
 
 const forgotPasswordSchema = z.object({
   email: z.string().trim().email("Valid email is required."),
@@ -39,14 +39,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: GENERIC_MESSAGE }, { status: 200 })
     }
 
-    const token = crypto.randomBytes(32).toString("hex")
+    const token = generateSecureToken()
+    const tokenHash = hashToken(token)
     const expires = new Date(Date.now() + 60 * 60 * 1000)
 
     await User.updateOne(
       { _id: user._id },
       {
         $set: {
-          resetPasswordToken: token,
+          resetPasswordToken: tokenHash,
           resetPasswordTokenExpires: expires,
         },
       }

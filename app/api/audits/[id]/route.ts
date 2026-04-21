@@ -6,7 +6,7 @@ import { Audit } from "@/models/Audit"
 
 export async function GET(
   _request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -15,10 +15,12 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const { id } = await context.params
+
     await connectDB()
 
     const audit = await Audit.findOne({
-      _id: params.id,
+      _id: id,
       userId: session.user.id,
     }).lean()
 
@@ -33,7 +35,21 @@ export async function GET(
         handle: a.handle,
         planAtRun: a.planAtRun,
         auditType: a.auditType,
-        result: a.result,
+        result: {
+          ...a.result,
+          auditInsights: {
+            postsAnalyzed: a.postsAnalyzed,
+            reelsAnalyzed: a.reelsAnalyzed,
+            avgEngagementRate: a.avgEngagementRate,
+            engagementTrend: a.engagementTrend,
+            postingFrequencyPerWeek: a.postingFrequencyPerWeek,
+            contentMix: a.contentMix,
+            avgHashtagsPerPost: a.avgHashtagsPerPost,
+            reelViewRate: a.reelViewRate,
+            followerFollowingRatio: a.followerFollowingRatio,
+            dataSource: a.dataSource,
+          },
+        },
         createdAt: a.createdAt,
       },
     })

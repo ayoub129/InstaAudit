@@ -27,6 +27,52 @@ const AuditSchema = new Schema(
       type: Schema.Types.Mixed,
       required: true,
     },
+    postsAnalyzed: {
+      type: Number,
+      default: 0,
+    },
+    reelsAnalyzed: {
+      type: Number,
+      default: 0,
+    },
+    avgEngagementRate: {
+      type: Number,
+      default: 0,
+    },
+    engagementTrend: {
+      type: String,
+      enum: ["improving", "declining", "stable"],
+      default: "stable",
+    },
+    postingFrequencyPerWeek: {
+      type: Number,
+      default: 0,
+    },
+    contentMix: {
+      image: { type: Number, default: 0 },
+      carousel: { type: Number, default: 0 },
+      reel: { type: Number, default: 0 },
+    },
+    avgHashtagsPerPost: {
+      type: Number,
+      default: 0,
+    },
+    reelViewRate: {
+      type: Number,
+      default: 0,
+    },
+    followerFollowingRatio: {
+      type: Number,
+      default: 0,
+    },
+    moduleScores: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
+    dataSource: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
   },
   { timestamps: true }
 )

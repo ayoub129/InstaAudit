@@ -5,6 +5,10 @@ export interface IUser {
   _id: string
   email: string
   name: string
+  role?: "user" | "admin"
+  accountStatus?: "active" | "suspended"
+  suspendedAt?: Date | null
+  suspensionReason?: string | null
   password?: string
   googleId?: string | null
   image?: string | null
@@ -51,6 +55,25 @@ const UserSchema = new mongoose.Schema<IUser>(
     name: {
       type: String,
       required: true,
+      trim: true,
+    },
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+    },
+    accountStatus: {
+      type: String,
+      enum: ["active", "suspended"],
+      default: "active",
+    },
+    suspendedAt: {
+      type: Date,
+      default: null,
+    },
+    suspensionReason: {
+      type: String,
+      default: null,
       trim: true,
     },
     password: {

@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button"
 
 interface ProfileInputProps {
   onAudit: (username: string) => void
-  onDemo?: () => void
   loading: boolean
   plan: "free" | "starter" | "pro" | "agency"
   auditsRemainingText: string
@@ -30,7 +29,6 @@ const quickSuggestions = ["creatorhub", "brandstudio", "growthcoach", "agencymod
 
 export function ProfileInput({
   onAudit,
-  onDemo,
   loading,
   plan,
   auditsRemainingText,
@@ -157,15 +155,6 @@ export function ProfileInput({
             </div>
           </div>
 
-          {onDemo && (
-            <button
-              type="button"
-              onClick={onDemo}
-              className="text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
-            >
-              Try with demo data →
-            </button>
-          )}
         </div>
       </div>
     </Card>

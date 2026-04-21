@@ -16,10 +16,13 @@ export default withAuth(
 
     const isDashboardRoute = pathname.startsWith("/dashboard")
     const isCheckoutRoute = pathname.startsWith("/checkout")
+    const isAdminRoute = pathname.startsWith("/admin")
     const isAuthRoute =
       pathname.startsWith("/auth/signin") || pathname.startsWith("/auth/signup")
+    const isAdmin = token.role === "admin"
 
     const shouldForceInitialCheckout =
+      !isAdmin &&
       selectedPlan &&
       selectedPlan !== "free" &&
       subscriptionStatus !== "active" &&
@@ -29,7 +32,15 @@ export default withAuth(
       return NextResponse.redirect(new URL("/checkout", req.url))
     }
 
+    if (isAdminRoute && !isAdmin) {
+      return NextResponse.redirect(new URL("/dashboard", req.url))
+    }
+
     if (token && isAuthRoute) {
+      if (isAdmin) {
+        return NextResponse.redirect(new URL("/admin", req.url))
+      }
+
       if (shouldForceInitialCheckout) {
         return NextResponse.redirect(new URL("/checkout", req.url))
       }
@@ -48,7 +59,9 @@ export default withAuth(
       authorized: ({ token, req }) => {
         const pathname = req.nextUrl.pathname
         const isProtected =
-          pathname.startsWith("/dashboard") || pathname.startsWith("/checkout")
+          pathname.startsWith("/dashboard") ||
+          pathname.startsWith("/checkout") ||
+          pathname.startsWith("/admin")
 
         if (isProtected) {
           return !!token
@@ -64,5 +77,11 @@ export default withAuth(
 )
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/checkout", "/auth/signin", "/auth/signup"],
+  matcher: [
+    "/dashboard/:path*",
+    "/checkout",
+    "/admin/:path*",
+    "/auth/signin",
+    "/auth/signup",
+  ],
 }

@@ -6,6 +6,7 @@ import { User } from "@/models/User"
 import Payment from "@/models/Payment"
 import Pricing from "@/models/Pricing"
 import { getPayPalAccessToken, PAYPAL_BASE } from "@/lib/paypal"
+import { trackEvent } from "@/lib/analytics/track-event"
 
 type Plan = "free" | "starter" | "pro" | "agency"
 type Billing = "monthly" | "annual"
@@ -34,6 +35,10 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.email) {
+      await trackEvent({
+        eventName: "checkout_activation_unauthorized",
+        request,
+      })
       return NextResponse.json(
         { success: false, message: "Unauthorized." },
         { status: 401 }
@@ -44,6 +49,10 @@ export async function POST(request: Request) {
     const subscriptionId = body?.subscriptionId
 
     if (!subscriptionId) {
+      await trackEvent({
+        eventName: "checkout_activation_missing_subscription_id",
+        request,
+      })
       return NextResponse.json(
         { success: false, message: "Missing subscription ID." },
         { status: 400 }
@@ -57,6 +66,10 @@ export async function POST(request: Request) {
     })
 
     if (!user) {
+      await trackEvent({
+        eventName: "checkout_activation_user_not_found",
+        request,
+      })
       return NextResponse.json(
         { success: false, message: "User not found." },
         { status: 404 }
@@ -67,6 +80,12 @@ export async function POST(request: Request) {
     const selectedBilling: Billing = user.selectedBilling || "monthly"
 
     if (selectedPlan === "free") {
+      await trackEvent({
+        eventName: "checkout_activation_invalid_free_plan",
+        userId: String(user._id),
+        properties: { selectedPlan },
+        request,
+      })
       return NextResponse.json(
         { success: false, message: "Free plan does not require payment." },
         { status: 400 }
@@ -78,6 +97,12 @@ export async function POST(request: Request) {
       .then((doc) => doc as PricingLean | null)
 
     if (!pricing) {
+      await trackEvent({
+        eventName: "checkout_activation_pricing_missing",
+        userId: String(user._id),
+        properties: { selectedPlan, selectedBilling },
+        request,
+      })
       return NextResponse.json(
         { success: false, message: "Pricing plan not found." },
         { status: 404 }
@@ -100,6 +125,17 @@ export async function POST(request: Request) {
     const paypalData = await paypalRes.json()
 
     if (!paypalRes.ok) {
+      await trackEvent({
+        eventName: "checkout_activation_paypal_verify_failed",
+        userId: String(user._id),
+        properties: {
+          selectedPlan,
+          selectedBilling,
+          paypalStatus: paypalData?.status ?? null,
+          paypalError: paypalData?.message ?? "unknown_error",
+        },
+        request,
+      })
       return NextResponse.json(
         {
           success: false,
@@ -111,6 +147,16 @@ export async function POST(request: Request) {
 
     const validStatuses = ["ACTIVE", "APPROVAL_PENDING", "APPROVED"]
     if (!validStatuses.includes(paypalData.status)) {
+      await trackEvent({
+        eventName: "checkout_activation_unexpected_paypal_status",
+        userId: String(user._id),
+        properties: {
+          selectedPlan,
+          selectedBilling,
+          paypalStatus: paypalData.status,
+        },
+        request,
+      })
       return NextResponse.json(
         {
           success: false,
@@ -152,12 +198,26 @@ export async function POST(request: Request) {
     user.subscriptionStatus = "active"
     user.paymentProvider = "paypal"
     user.providerSubscriptionId = subscriptionId
+    user.checkoutStatus = "completed"
     user.subscriptionCurrentPeriodEnd =
       paypalData.billing_info?.next_billing_time
         ? new Date(paypalData.billing_info.next_billing_time)
         : null
 
     await user.save()
+
+    await trackEvent({
+      eventName: "checkout_completed",
+      userId: String(user._id),
+      properties: {
+        selectedPlan,
+        selectedBilling,
+        amount,
+        provider: "paypal",
+        subscriptionId,
+      },
+      request,
+    })
 
     return NextResponse.json({
       success: true,
@@ -166,6 +226,13 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error("subscription/activate error:", error)
+    await trackEvent({
+      eventName: "checkout_activation_failed_unexpected",
+      properties: {
+        error: error instanceof Error ? error.message : "unknown_error",
+      },
+      request,
+    })
     return NextResponse.json(
       { success: false, message: "Failed to activate subscription." },
       { status: 500 }

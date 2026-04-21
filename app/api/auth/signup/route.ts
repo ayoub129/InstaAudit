@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server"
-import crypto from "crypto"
 import { connectDB } from "@/lib/mongodb"
 import { User } from "@/models/User"
 import { sendVerificationEmail } from "@/lib/email"
+import { generateSecureToken, hashToken } from "@/lib/security/tokens"
+import { trackEvent } from "@/lib/analytics/track-event"
 import { z } from "zod"
 
 const PLAN_VALUES = ["free", "starter", "pro", "agency"] as const
@@ -22,6 +23,14 @@ export async function POST(request: Request) {
     const parsed = signupSchema.safeParse(body)
 
     if (!parsed.success) {
+      await trackEvent({
+        eventName: "signup_validation_failed",
+        properties: {
+          fields: Object.keys(parsed.error.flatten().fieldErrors),
+        },
+        request,
+      })
+
       const fieldErrors = parsed.error.flatten().fieldErrors
       const normalized: Record<string, string[]> = {}
 
@@ -38,11 +47,24 @@ export async function POST(request: Request) {
     const selectedPlan = parsed.data.selectedPlan
     const selectedBilling = parsed.data.selectedBilling
 
+    await trackEvent({
+      eventName: "signup_submitted",
+      properties: { selectedPlan, selectedBilling },
+      request,
+    })
+
     await connectDB()
 
     const existing = await User.findOne({ email })
 
     if (existing) {
+      await trackEvent({
+        eventName: "signup_failed_existing_user",
+        userId: String(existing._id),
+        properties: { selectedPlan, selectedBilling },
+        request,
+      })
+
       return NextResponse.json(
         {
           error: {
@@ -53,7 +75,8 @@ export async function POST(request: Request) {
       )
     }
 
-    const verificationToken = crypto.randomBytes(32).toString("hex")
+    const verificationToken = generateSecureToken()
+    const verificationTokenHash = hashToken(verificationToken)
     const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000)
 
     const isFreePlan = selectedPlan === "free"
@@ -61,9 +84,11 @@ export async function POST(request: Request) {
     const user = await User.create({
       name,
       email,
+      role: "user",
+      accountStatus: "active",
       password,
       emailVerified: null,
-      verificationToken,
+      verificationToken: verificationTokenHash,
       verificationTokenExpires,
 
       selectedPlan,
@@ -77,6 +102,7 @@ export async function POST(request: Request) {
       providerCustomerId: null,
       providerSubscriptionId: null,
       subscriptionCurrentPeriodEnd: null,
+      checkoutStatus: isFreePlan ? "completed" : "not_started",
     })
 
     try {
@@ -85,6 +111,13 @@ export async function POST(request: Request) {
       console.error("Send verification email failed:", emailError)
 
       await User.deleteOne({ _id: user._id })
+
+      await trackEvent({
+        eventName: "signup_failed_verification_email",
+        userId: String(user._id),
+        properties: { selectedPlan, selectedBilling },
+        request,
+      })
 
       return NextResponse.json(
         {
@@ -95,6 +128,13 @@ export async function POST(request: Request) {
       )
     }
 
+    await trackEvent({
+      eventName: "signup_completed",
+      userId: String(user._id),
+      properties: { selectedPlan, selectedBilling },
+      request,
+    })
+
     return NextResponse.json(
       {
         message:
@@ -104,6 +144,17 @@ export async function POST(request: Request) {
     )
   } catch (err) {
     console.error("Signup error:", err)
+
+    await trackEvent({
+      eventName: "signup_failed_unexpected",
+      properties: {
+        error:
+          err instanceof Error
+            ? err.message
+            : "unknown_error",
+      },
+      request,
+    })
 
     return NextResponse.json(
       { error: "Something went wrong. Please try again." },

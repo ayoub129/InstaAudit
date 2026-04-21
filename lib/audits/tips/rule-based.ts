@@ -1,4 +1,4 @@
-import type { ScoredMetrics } from "@/lib/audits/scoring/index"
+import type { ScoredMetrics } from "@/lib/audits/metrics"
 import type { ProfileData } from "@/lib/instagram/types"
 
 /**
@@ -11,8 +11,8 @@ export function generateRuleBasedTips(
 ): string[] {
   const tips: string[] = []
 
-  // Bio tips
-  const bio = metrics.bio
+  // Profile/Bio tips
+  const bio = metrics.bioOptimization ?? metrics.bio
   if (bio) {
     if (bio.score < 40) {
       tips.push(
@@ -26,7 +26,7 @@ export function generateRuleBasedTips(
   }
 
   // CTA tips
-  const cta = metrics.cta
+  const cta = metrics.profileStrength ?? metrics.cta
   if (cta) {
     if (!profile.hasLinkInBio) {
       tips.push(
@@ -40,7 +40,7 @@ export function generateRuleBasedTips(
   }
 
   // Positioning tips
-  const pos = metrics.positioning
+  const pos = metrics.profileStrength ?? metrics.positioning
   if (pos) {
     if (pos.score < 45) {
       tips.push(
@@ -54,7 +54,7 @@ export function generateRuleBasedTips(
   }
 
   // Caption tips (when post data is available)
-  const cap = metrics.captions
+  const cap = metrics.contentMix ?? metrics.captions
   if (cap) {
     if (cap.score < 45) {
       tips.push(
@@ -68,7 +68,7 @@ export function generateRuleBasedTips(
   }
 
   // Hashtag tips
-  const ht = metrics.hashtags
+  const ht = metrics.hashtagStrategy ?? metrics.hashtags
   if (ht) {
     if (ht.score < 40) {
       tips.push(
@@ -82,7 +82,7 @@ export function generateRuleBasedTips(
   }
 
   // Content frequency tips
-  const cont = metrics.content
+  const cont = metrics.contentConsistency ?? metrics.content
   if (cont) {
     if (cont.score < 40) {
       tips.push(
@@ -96,7 +96,7 @@ export function generateRuleBasedTips(
   }
 
   // Engagement tips (advanced plans)
-  const eng = metrics.engagement
+  const eng = metrics.engagementHealth ?? metrics.engagement
   if (eng && eng.score < 55) {
     tips.push(
       "Engagement rate is below average. Focus on content that prompts saves and shares — these are the strongest engagement signals for the algorithm."
@@ -104,7 +104,7 @@ export function generateRuleBasedTips(
   }
 
   // Strategy tip
-  const strat = metrics.strategy
+  const strat = metrics.audienceQuality ?? metrics.strategy
   if (strat && strat.score < 60) {
     tips.push(
       "Define 2–3 content pillars and stick to them. Accounts with a clear, consistent theme grow faster because followers know exactly what to expect."

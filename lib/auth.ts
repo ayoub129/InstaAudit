@@ -1,74 +1,85 @@
-import type { NextAuthOptions, User as NextAuthUser } from "next-auth"
-import CredentialsProvider from "next-auth/providers/credentials"
-import GoogleProvider from "next-auth/providers/google"
-import type { Types } from "mongoose"
-import { cookies } from "next/headers"
-import { connectDB } from "@/lib/mongodb"
-import { User, comparePassword } from "@/models/User"
+import type { NextAuthOptions, User as NextAuthUser } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
+import type { Types } from "mongoose";
+import { cookies } from "next/headers";
+import { connectDB } from "@/lib/mongodb";
+import { User, comparePassword } from "@/models/User";
 
-type Plan = "free" | "starter" | "pro" | "agency"
-type Billing = "monthly" | "annual"
-type SubscriptionStatus = "inactive" | "trialing" | "active" | "past_due" | "canceled"
-type CheckoutStatus = "not_started" | "abandoned" | "completed"
-type PaymentProvider = "paypal" | "2checkout" | null
+type Plan = "free" | "starter" | "pro" | "agency";
+type Billing = "monthly" | "annual";
+type Role = "user" | "admin";
+type AccountStatus = "active" | "suspended";
+type SubscriptionStatus =
+  | "inactive"
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceled";
+type CheckoutStatus = "not_started" | "abandoned" | "completed";
+type PaymentProvider = "paypal" | "2checkout" | null;
 
 interface UserLean {
-  _id: Types.ObjectId
-  email: string
-  name: string
-  password?: string
-  image?: string | null
-  googleId?: string | null
-  emailVerified?: Date | null
+  _id: Types.ObjectId;
+  email: string;
+  name: string;
+  role?: Role;
+  accountStatus?: AccountStatus;
+  password?: string;
+  image?: string | null;
+  googleId?: string | null;
+  emailVerified?: Date | null;
 
-  selectedPlan?: Plan
-  selectedBilling?: Billing
+  selectedPlan?: Plan;
+  selectedBilling?: Billing;
 
-  subscriptionPlan?: Plan
-  subscriptionBilling?: Billing
-  subscriptionStatus?: SubscriptionStatus
+  subscriptionPlan?: Plan;
+  subscriptionBilling?: Billing;
+  subscriptionStatus?: SubscriptionStatus;
 
-  paymentProvider?: PaymentProvider
-  providerSubscriptionId?: string | null
+  paymentProvider?: PaymentProvider;
+  providerSubscriptionId?: string | null;
 
-  cancelAtPeriodEnd?: boolean
-  gracePeriodEndsAt?: Date | null
+  cancelAtPeriodEnd?: boolean;
+  gracePeriodEndsAt?: Date | null;
 
-  checkoutStatus?: CheckoutStatus
+  checkoutStatus?: CheckoutStatus;
 }
 
 interface AppAuthUser extends NextAuthUser {
-  id: string
-  rememberMe?: boolean
-  emailVerified?: Date | null
+  id: string;
+  rememberMe?: boolean;
+  emailVerified?: Date | null;
+  role?: Role;
+  accountStatus?: AccountStatus;
 
-  selectedPlan?: Plan
-  selectedBilling?: Billing
+  selectedPlan?: Plan;
+  selectedBilling?: Billing;
 
-  subscriptionPlan?: Plan
-  subscriptionBilling?: Billing
-  subscriptionStatus?: SubscriptionStatus
+  subscriptionPlan?: Plan;
+  subscriptionBilling?: Billing;
+  subscriptionStatus?: SubscriptionStatus;
 
-  paymentProvider?: PaymentProvider
-  providerSubscriptionId?: string | null
+  paymentProvider?: PaymentProvider;
+  providerSubscriptionId?: string | null;
 
-  cancelAtPeriodEnd?: boolean
-  gracePeriodEndsAt?: Date | null
+  cancelAtPeriodEnd?: boolean;
+  gracePeriodEndsAt?: Date | null;
 
-  checkoutStatus?: CheckoutStatus
+  checkoutStatus?: CheckoutStatus;
 }
 
-const PLAN_VALUES: readonly Plan[] = ["free", "starter", "pro", "agency"]
-const BILLING_VALUES: readonly Billing[] = ["monthly", "annual"]
+const PLAN_VALUES: readonly Plan[] = ["free", "starter", "pro", "agency"];
+const BILLING_VALUES: readonly Billing[] = ["monthly", "annual"];
 
 function getSafePlan(value: unknown): Plan {
-  return PLAN_VALUES.includes(value as Plan) ? (value as Plan) : "free"
+  return PLAN_VALUES.includes(value as Plan) ? (value as Plan) : "free";
 }
 
 function getSafeBilling(value: unknown): Billing {
   return BILLING_VALUES.includes(value as Billing)
     ? (value as Billing)
-    : "monthly"
+    : "monthly";
 }
 
 export const authOptions: NextAuthOptions = {
@@ -84,37 +95,43 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error("Please enter your email and password.")
+          throw new Error("Please enter your email and password.");
         }
 
-        const email = credentials.email.trim().toLowerCase()
+        const email = credentials.email.trim().toLowerCase();
 
-        await connectDB()
+        await connectDB();
 
         const user = await User.findOne({ email })
           .select("+password")
           .lean()
-          .then((doc) => doc as UserLean | null)
+          .then((doc) => doc as UserLean | null);
 
         if (!user) {
-          throw new Error("No account found with this email.")
+          throw new Error("No account found with this email.");
         }
 
         if (!user.password) {
-          throw new Error("This account uses Google sign-in. Please continue with Google.")
+          throw new Error(
+            "This account uses Google sign-in. Please continue with Google.",
+          );
         }
 
-        const ok = await comparePassword(credentials.password, user.password)
+        if (user.accountStatus === "suspended") {
+          throw new Error("This account is suspended. Please contact support.");
+        }
+
+        const ok = await comparePassword(credentials.password, user.password);
 
         if (!ok) {
-          throw new Error("Incorrect email or password.")
+          throw new Error("Incorrect email or password.");
         }
 
         if (!user.emailVerified) {
-          throw new Error("Please verify your email before signing in.")
+          throw new Error("Please verify your email before signing in.");
         }
 
-        const rememberMe = credentials.rememberMe === "true"
+        const rememberMe = credentials.rememberMe === "true";
 
         const authUser: AppAuthUser = {
           id: user._id.toString(),
@@ -123,6 +140,8 @@ export const authOptions: NextAuthOptions = {
           image: user.image ?? null,
           rememberMe,
           emailVerified: user.emailVerified ?? null,
+          role: user.role ?? "user",
+          accountStatus: user.accountStatus ?? "active",
 
           selectedPlan: user.selectedPlan ?? "free",
           selectedBilling: user.selectedBilling ?? "monthly",
@@ -139,10 +158,12 @@ export const authOptions: NextAuthOptions = {
 
           checkoutStatus:
             user.checkoutStatus ??
-            ((user.selectedPlan ?? "free") === "free" ? "completed" : "not_started"),
-        }
+            ((user.selectedPlan ?? "free") === "free"
+              ? "completed"
+              : "not_started"),
+        };
 
-        return authUser
+        return authUser;
       },
     }),
 
@@ -165,26 +186,26 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider !== "google") {
-        return true
+        return true;
       }
 
-      await connectDB()
+      await connectDB();
 
-      const email = user.email?.trim().toLowerCase()
-      if (!email) return false
+      const email = user.email?.trim().toLowerCase();
+      if (!email) return false;
 
-      const cookieStore = await cookies()
+      const cookieStore = await cookies();
       const selectedPlan = getSafePlan(
-        cookieStore.get("instaaudit_selected_plan")?.value
-      )
+        cookieStore.get("instaaudit_selected_plan")?.value,
+      );
       const selectedBilling = getSafeBilling(
-        cookieStore.get("instaaudit_selected_billing")?.value
-      )
+        cookieStore.get("instaaudit_selected_billing")?.value,
+      );
 
-      const existingUser = await User.findOne({ email })
+      const existingUser = await User.findOne({ email });
 
       if (!existingUser) {
-        const isFreePlan = selectedPlan === "free"
+        const isFreePlan = selectedPlan === "free";
 
         await User.create({
           name: user.name?.trim() || "Google User",
@@ -197,6 +218,8 @@ export const authOptions: NextAuthOptions = {
           verificationTokenExpires: null,
           resetPasswordToken: null,
           resetPasswordTokenExpires: null,
+          role: "user",
+          accountStatus: "active",
 
           selectedPlan,
           selectedBilling,
@@ -214,154 +237,188 @@ export const authOptions: NextAuthOptions = {
 
           subscriptionCurrentPeriodEnd: null,
           checkoutStatus: isFreePlan ? "completed" : "not_started",
-        })
+        });
       } else {
+        if (existingUser.accountStatus === "suspended") {
+          return false;
+        }
+
         const updateData: Record<string, unknown> = {
           googleId: existingUser.googleId || account.providerAccountId,
           image: user.image || existingUser.image || null,
-        }
+        };
 
         if (!existingUser.emailVerified) {
-          updateData.emailVerified = new Date()
+          updateData.emailVerified = new Date();
         }
 
-        if (!existingUser.selectedPlan || existingUser.selectedPlan === "free") {
-          updateData.selectedPlan = selectedPlan
+        if (
+          !existingUser.selectedPlan ||
+          existingUser.selectedPlan === "free"
+        ) {
+          updateData.selectedPlan = selectedPlan;
         }
 
         if (!existingUser.selectedBilling) {
-          updateData.selectedBilling = selectedBilling
+          updateData.selectedBilling = selectedBilling;
         }
 
         if (!existingUser.checkoutStatus) {
           updateData.checkoutStatus =
-            selectedPlan === "free" ? "completed" : "not_started"
+            selectedPlan === "free" ? "completed" : "not_started";
         }
 
         if (typeof existingUser.cancelAtPeriodEnd === "undefined") {
-          updateData.cancelAtPeriodEnd = false
+          updateData.cancelAtPeriodEnd = false;
         }
 
         if (typeof existingUser.gracePeriodEndsAt === "undefined") {
-          updateData.gracePeriodEndsAt = null
+          updateData.gracePeriodEndsAt = null;
         }
 
-        await User.updateOne({ _id: existingUser._id }, { $set: updateData })
+        await User.updateOne({ _id: existingUser._id }, { $set: updateData });
       }
 
-      cookieStore.delete("instaaudit_selected_plan")
-      cookieStore.delete("instaaudit_selected_billing")
+      cookieStore.delete("instaaudit_selected_plan");
+      cookieStore.delete("instaaudit_selected_billing");
 
-      return true
+      return true;
     },
 
     async jwt({ token, user, account }) {
-      const appUser = user as AppAuthUser | undefined
+      const appUser = user as AppAuthUser | undefined;
 
       if (appUser) {
-        token.id = appUser.id
-        token.email = appUser.email
-        token.name = appUser.name
-        token.picture = appUser.image
+        token.id = appUser.id;
+        token.email = appUser.email;
+        token.name = appUser.name;
+        token.picture = appUser.image;
+        token.role = appUser.role ?? "user";
+        token.accountStatus = appUser.accountStatus ?? "active";
 
         if (appUser.emailVerified != null) {
-          token.emailVerified = appUser.emailVerified
+          token.emailVerified = appUser.emailVerified;
         } else if (account?.provider === "google") {
-          token.emailVerified = new Date()
+          token.emailVerified = new Date();
         }
 
-        token.selectedPlan = appUser.selectedPlan ?? "free"
-        token.selectedBilling = appUser.selectedBilling ?? "monthly"
+        token.selectedPlan = appUser.selectedPlan ?? "free";
+        token.selectedBilling = appUser.selectedBilling ?? "monthly";
 
-        token.subscriptionPlan = appUser.subscriptionPlan ?? "free"
-        token.subscriptionBilling = appUser.subscriptionBilling ?? "monthly"
-        token.subscriptionStatus = appUser.subscriptionStatus ?? "inactive"
+        token.subscriptionPlan = appUser.subscriptionPlan ?? "free";
+        token.subscriptionBilling = appUser.subscriptionBilling ?? "monthly";
+        token.subscriptionStatus = appUser.subscriptionStatus ?? "inactive";
 
-        token.paymentProvider = appUser.paymentProvider ?? null
-        token.providerSubscriptionId = appUser.providerSubscriptionId ?? null
+        token.paymentProvider = appUser.paymentProvider ?? null;
+        token.providerSubscriptionId = appUser.providerSubscriptionId ?? null;
 
-        token.cancelAtPeriodEnd = appUser.cancelAtPeriodEnd ?? false
-        token.gracePeriodEndsAt = appUser.gracePeriodEndsAt ?? null
+        token.cancelAtPeriodEnd = appUser.cancelAtPeriodEnd ?? false;
+        token.gracePeriodEndsAt = appUser.gracePeriodEndsAt ?? null;
 
         token.checkoutStatus =
           appUser.checkoutStatus ??
-          ((appUser.selectedPlan ?? "free") === "free" ? "completed" : "not_started")
+          ((appUser.selectedPlan ?? "free") === "free"
+            ? "completed"
+            : "not_started");
 
-        const rememberMe = appUser.rememberMe === true
-        const maxAge = rememberMe ? 30 * 24 * 60 * 60 : 24 * 60 * 60
-        token.exp = Math.floor(Date.now() / 1000) + maxAge
+        const rememberMe = appUser.rememberMe === true;
+        const maxAge = rememberMe ? 30 * 24 * 60 * 60 : 24 * 60 * 60;
+        token.exp = Math.floor(Date.now() / 1000) + maxAge;
       }
 
       if (token.email) {
-        await connectDB()
+        await connectDB();
 
         const dbUser = await User.findOne({
           email: String(token.email).toLowerCase(),
         })
           .lean()
-          .then((doc) => doc as UserLean | null)
+          .then((doc) => doc as UserLean | null);
 
         if (dbUser) {
-          token.id = dbUser._id.toString()
+          token.id = dbUser._id.toString();
+          token.role = dbUser.role ?? "user";
+          token.accountStatus = dbUser.accountStatus ?? "active";
 
-          token.selectedPlan = dbUser.selectedPlan ?? "free"
-          token.selectedBilling = dbUser.selectedBilling ?? "monthly"
+          token.selectedPlan = dbUser.selectedPlan ?? "free";
+          token.selectedBilling = dbUser.selectedBilling ?? "monthly";
 
-          token.subscriptionPlan = dbUser.subscriptionPlan ?? "free"
-          token.subscriptionBilling = dbUser.subscriptionBilling ?? "monthly"
-          token.subscriptionStatus = dbUser.subscriptionStatus ?? "inactive"
+          token.subscriptionPlan = dbUser.subscriptionPlan ?? "free";
+          token.subscriptionBilling = dbUser.subscriptionBilling ?? "monthly";
+          token.subscriptionStatus = dbUser.subscriptionStatus ?? "inactive";
 
-          token.paymentProvider = dbUser.paymentProvider ?? null
-          token.providerSubscriptionId = dbUser.providerSubscriptionId ?? null
+          token.paymentProvider = dbUser.paymentProvider ?? null;
+          token.providerSubscriptionId = dbUser.providerSubscriptionId ?? null;
 
-          token.cancelAtPeriodEnd = dbUser.cancelAtPeriodEnd ?? false
-          token.gracePeriodEndsAt = dbUser.gracePeriodEndsAt ?? null
+          token.cancelAtPeriodEnd = dbUser.cancelAtPeriodEnd ?? false;
+          token.gracePeriodEndsAt = dbUser.gracePeriodEndsAt ?? null;
 
           token.checkoutStatus =
             dbUser.checkoutStatus ??
-            ((dbUser.selectedPlan ?? "free") === "free" ? "completed" : "not_started")
+            ((dbUser.selectedPlan ?? "free") === "free"
+              ? "completed"
+              : "not_started");
 
           if (dbUser.emailVerified != null) {
-            token.emailVerified = dbUser.emailVerified
+            token.emailVerified = dbUser.emailVerified;
           }
         }
       }
 
-      return token
+      return token;
     },
 
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.id as string
-        session.user.email = token.email as string
-        session.user.name = token.name as string
-        session.user.image = token.picture as string | null | undefined
-        session.user.emailVerified = token.emailVerified as Date | null | undefined
+        session.user.id = token.id as string;
+        session.user.email = token.email as string;
+        session.user.name = token.name as string;
+        session.user.image = token.picture as string | null | undefined;
+        session.user.emailVerified = token.emailVerified as
+          | Date
+          | null
+          | undefined;
+        session.user.role = (token.role as Role | undefined) ?? "user";
+        session.user.accountStatus =
+          (token.accountStatus as AccountStatus | undefined) ?? "active";
 
-        session.user.selectedPlan = token.selectedPlan as Plan | undefined
-        session.user.selectedBilling = token.selectedBilling as Billing | undefined
+        session.user.selectedPlan = token.selectedPlan as Plan | undefined;
+        session.user.selectedBilling = token.selectedBilling as
+          | Billing
+          | undefined;
 
-        session.user.subscriptionPlan = token.subscriptionPlan as Plan | undefined
-        session.user.subscriptionBilling =
-          token.subscriptionBilling as Billing | undefined
-        session.user.subscriptionStatus =
-          token.subscriptionStatus as SubscriptionStatus | undefined
+        session.user.subscriptionPlan = token.subscriptionPlan as
+          | Plan
+          | undefined;
+        session.user.subscriptionBilling = token.subscriptionBilling as
+          | Billing
+          | undefined;
+        session.user.subscriptionStatus = token.subscriptionStatus as
+          | SubscriptionStatus
+          | undefined;
 
-        session.user.paymentProvider =
-          token.paymentProvider as PaymentProvider | undefined
-        session.user.providerSubscriptionId =
-          token.providerSubscriptionId as string | null | undefined
+        session.user.paymentProvider = token.paymentProvider as
+          | PaymentProvider
+          | undefined;
+        session.user.providerSubscriptionId = token.providerSubscriptionId as
+          | string
+          | null
+          | undefined;
 
-        session.user.cancelAtPeriodEnd =
-          token.cancelAtPeriodEnd as boolean | undefined
-        session.user.gracePeriodEndsAt =
-          token.gracePeriodEndsAt as Date | null | undefined
+        session.user.cancelAtPeriodEnd = token.cancelAtPeriodEnd as
+          | boolean
+          | undefined;
+        session.user.gracePeriodEndsAt = token.gracePeriodEndsAt as
+          | Date
+          | null
+          | undefined;
 
-        session.user.checkoutStatus =
-          token.checkoutStatus as CheckoutStatus | undefined
+        session.user.checkoutStatus = token.checkoutStatus as
+          | CheckoutStatus
+          | undefined;
       }
 
-      return session
+      return session;
     },
   },
-}
+};

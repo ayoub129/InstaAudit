@@ -1,6 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import Link from "next/link"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 import {
@@ -16,10 +17,16 @@ import { EmailVerificationBanner } from "@/components/dashboard/email-verificati
 import { ProfileInput } from "@/components/dashboard/profile-input"
 import { AuditResults } from "@/components/dashboard/audit-results"
 import { Button } from "@/components/ui/button"
-import { MOCK_RESULTS } from "@/lib/audits/mock-data"
 
 type AccessLevel = "free" | "paid" | "grace"
 type PlanKey = "free" | "starter" | "pro" | "agency"
+
+type AuditSummary = {
+  id: string
+  handle: string
+  overallScore: number
+  createdAt: string
+}
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -31,6 +38,8 @@ export default function DashboardPage() {
   const [lastAuditAt, setLastAuditAt] = useState<string | null>(null)
   const [instagramConnected] = useState(false)
   const [usedAudits, setUsedAudits] = useState(0)
+  const [averageScore, setAverageScore] = useState<number | null>(null)
+  const [historyAudits, setHistoryAudits] = useState<AuditSummary[]>([])
   const [auditError, setAuditError] = useState<string | null>(null)
 
   const subscriptionPlan = (session?.user?.subscriptionPlan ?? "free") as PlanKey
@@ -70,6 +79,43 @@ export default function DashboardPage() {
     ? "Unlimited"
     : `${remainingAudits} remaining`
 
+  useEffect(() => {
+    async function loadHistory() {
+      try {
+        const [historyRes, overviewRes] = await Promise.all([
+          fetch("/api/audits/history", { cache: "no-store" }),
+          fetch("/api/reports/overview?days=30", { cache: "no-store" }),
+        ])
+
+        if (!historyRes.ok) return
+        const payload = await historyRes.json()
+        const audits = Array.isArray(payload?.audits) ? (payload.audits as AuditSummary[]) : []
+        setHistoryAudits(audits)
+
+        if (audits.length > 0) {
+          const avg = Math.round(
+            audits.reduce((sum, item) => sum + Number(item.overallScore || 0), 0) / audits.length,
+          )
+          setAverageScore(avg)
+          setLastAuditAt(new Date(audits[0].createdAt).toLocaleDateString())
+        } else {
+          setAverageScore(null)
+          setLastAuditAt(null)
+        }
+
+        if (overviewRes.ok) {
+          const overview = await overviewRes.json()
+          const used = Number(overview?.stats?.auditsThisMonth ?? 0)
+          setUsedAudits(Number.isFinite(used) ? used : 0)
+        }
+      } catch {
+        // Keep dashboard usable even if history fetch fails.
+      }
+    }
+
+    loadHistory()
+  }, [])
+
   const handleAudit = async (username: string) => {
     setLoading(true)
     setAuditError(null)
@@ -94,21 +140,26 @@ export default function DashboardPage() {
       setHasAudited(true)
       setLastAuditAt("Just now")
       setUsedAudits((prev) => (isUnlimited ? prev : prev + 1))
+      setAverageScore((prev) => {
+        if (prev === null) return data.result?.overallScore ?? null
+        const count = Math.max(historyAudits.length, 0)
+        return Math.round((prev * count + (data.result?.overallScore ?? 0)) / (count + 1))
+      })
+      setHistoryAudits((prev) => [
+        {
+          id: String(data.auditId ?? `new-${Date.now()}`),
+          handle: String(data.result?.username ?? username),
+          overallScore: Number(data.result?.overallScore ?? 0),
+          createdAt: new Date().toISOString(),
+        },
+        ...prev,
+      ])
     } catch (error) {
       console.error(error)
       setAuditError("Something went wrong while running the audit.")
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleDemo = () => {
-    const mockPlan = subscriptionPlan as "free" | "starter" | "pro" | "agency"
-    const mock = MOCK_RESULTS[mockPlan] ?? MOCK_RESULTS.free
-    setAuditData(mock)
-    setHasAudited(true)
-    setLastAuditAt("Just now")
-    setAuditError(null)
   }
 
   const planLabel =
@@ -131,7 +182,7 @@ export default function DashboardPage() {
     },
     {
       title: "Average score",
-      value: hasAudited ? `${auditData?.overallScore}/100` : "—",
+      value: averageScore !== null ? `${averageScore}/100` : "—",
       icon: LineChart,
     },
     {
@@ -225,7 +276,6 @@ export default function DashboardPage() {
             {!hasAudited ? (
               <ProfileInput
                 onAudit={handleAudit}
-                onDemo={handleDemo}
                 loading={loading}
                 plan={subscriptionPlan}
                 auditsRemainingText={auditsRemainingText}
@@ -283,9 +333,24 @@ export default function DashboardPage() {
                   </p>
 
                   <div className="mt-6">
-                    <div className="rounded-2xl border border-dashed border-border bg-background/40 p-6 text-sm text-muted-foreground">
-                      No audits yet. Run your first audit above to see reports here.
-                    </div>
+                    {historyAudits.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-border bg-background/40 p-6 text-sm text-muted-foreground">
+                        No audits yet. Run your first audit above to see reports here.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {historyAudits.slice(0, 4).map((audit) => (
+                          <Link
+                            key={audit.id}
+                            href={`/dashboard/history/${audit.id}`}
+                            className="flex items-center justify-between rounded-2xl border border-border bg-background/60 px-4 py-3 text-sm transition-colors hover:bg-primary/5"
+                          >
+                            <span className="font-medium text-foreground">@{audit.handle}</span>
+                            <span className="text-muted-foreground">{audit.overallScore}/100</span>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 

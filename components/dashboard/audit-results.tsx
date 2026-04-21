@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowRight,
@@ -10,9 +9,7 @@ import {
   RotateCcw,
   Sparkles,
   Users,
-  LayoutGrid,
   FileText,
-  CheckCircle2,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -21,7 +18,6 @@ import { TipsSection } from "./tips-section"
 import { ContentPlanSection } from "./content-plan-section"
 import { ScoreCircle } from "./score-circle"
 import { cn } from "@/lib/utils"
-import { MOCK_RESULTS } from "@/lib/audits/mock-data"
 import type { AuditResult, DayPlan } from "@/lib/audits/types"
 
 type PlanKey = "free" | "starter" | "pro" | "agency"
@@ -41,14 +37,14 @@ const PLAN_COLORS: Record<PlanKey, string> = {
 }
 
 const METRIC_LABELS: Record<string, string> = {
-  bio: "Bio",
-  cta: "CTA",
-  positioning: "Positioning",
-  captions: "Captions",
-  hashtags: "Hashtags",
-  content: "Content",
-  engagement: "Engagement",
-  strategy: "Strategy",
+  profileStrength: "Profile Strength",
+  bioOptimization: "Bio Optimization",
+  contentConsistency: "Content Consistency",
+  engagementHealth: "Engagement Health",
+  contentMix: "Content Mix",
+  hashtagStrategy: "Hashtag Strategy",
+  reelsPerformance: "Reels Performance",
+  audienceQuality: "Audience Quality",
 }
 
 interface AuditResultsProps {
@@ -59,17 +55,91 @@ interface AuditResultsProps {
 
 export function AuditResults({ data, onNewAudit, currentPlan }: AuditResultsProps) {
   const router = useRouter()
-  const [previewPlan, setPreviewPlan] = useState<PlanKey>(currentPlan)
-  const [showSwitcher, setShowSwitcher] = useState(false)
 
-  // In preview mode use mock data, otherwise use real data
-  const isPreview = previewPlan !== currentPlan
-  const displayData: AuditResult = isPreview ? MOCK_RESULTS[previewPlan] : data
-  const displayPlan = previewPlan
+  const displayData: AuditResult = data
+  const displayPlan = currentPlan
 
   const snap = displayData.profileSnapshot
   const contentPlan = displayData.contentPlan as DayPlan[] | undefined
   const hasPlan = Array.isArray(contentPlan) && contentPlan.length > 0
+  const metricEntries = Object.entries(displayData.metrics)
+
+  const getNumeric = (value: unknown, fallback = 0) =>
+    typeof value === "number" && Number.isFinite(value) ? value : fallback
+
+  const contentMixRaw = displayData.metrics.contentMix?.rawData
+  const engagementRaw = displayData.metrics.engagementHealth?.rawData
+  const consistencyRaw = displayData.metrics.contentConsistency?.rawData
+  const hashtagRaw = displayData.metrics.hashtagStrategy?.rawData
+  const persistedInsights = displayData.auditInsights
+  const insightSources = persistedInsights?.dataSource ?? {}
+
+  const sourceMeta: Record<"graph" | "scraper" | "inferred", { label: string; className: string }> = {
+    graph: {
+      label: "Graph",
+      className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-400",
+    },
+    scraper: {
+      label: "Scraper",
+      className: "border-blue-500/25 bg-blue-500/10 text-blue-400",
+    },
+    inferred: {
+      label: "Inferred",
+      className: "border-amber-500/25 bg-amber-500/10 text-amber-400",
+    },
+  }
+
+  const resolveSource = (field: string) => {
+    const source = insightSources[field]
+    return source && sourceMeta[source] ? sourceMeta[source] : null
+  }
+
+  const contentMixStats = {
+    image: Math.round(getNumeric(persistedInsights?.contentMix?.image, getNumeric(contentMixRaw?.imageRate))),
+    carousel: Math.round(
+      getNumeric(persistedInsights?.contentMix?.carousel, getNumeric(contentMixRaw?.carouselRate)),
+    ),
+    reel: Math.round(getNumeric(persistedInsights?.contentMix?.reel, getNumeric(contentMixRaw?.reelAdoptionRate))),
+  }
+
+  const insightChips = [
+    {
+      label: "Posts analyzed",
+      value: String(
+        Math.round(
+          getNumeric(persistedInsights?.postsAnalyzed) ||
+            getNumeric(consistencyRaw?.postsAnalyzed) ||
+            getNumeric(engagementRaw?.postsAnalyzed) ||
+            0,
+        ),
+      ),
+      sourceKey: "postsAnalyzed",
+    },
+    {
+      label: "Avg engagement rate",
+      value: `${getNumeric(
+        persistedInsights?.avgEngagementRate,
+        getNumeric(engagementRaw?.avgEngagementRate),
+      ).toFixed(2)}%`,
+      sourceKey: "avgEngagementRate",
+    },
+    {
+      label: "Posting frequency",
+      value: `${getNumeric(
+        persistedInsights?.postingFrequencyPerWeek,
+        getNumeric(consistencyRaw?.postsPerWeek),
+      ).toFixed(1)}/week`,
+      sourceKey: "postingFrequencyPerWeek",
+    },
+    {
+      label: "Avg hashtags",
+      value: `${getNumeric(
+        persistedInsights?.avgHashtagsPerPost,
+        getNumeric(hashtagRaw?.avgHashtagsPerPost),
+      ).toFixed(1)}/post`,
+      sourceKey: "avgHashtagsPerPost",
+    },
+  ]
 
   return (
     <div className="space-y-6">
@@ -104,54 +174,6 @@ export function AuditResults({ data, onNewAudit, currentPlan }: AuditResultsProp
               </span>
             )}
 
-            {isPreview && (
-              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-400">
-                Preview mode
-              </span>
-            )}
-          </div>
-
-          {/* Plan switcher */}
-          <div className="relative">
-            <button
-              onClick={() => setShowSwitcher((v) => !v)}
-              className="flex items-center gap-2 rounded-xl border border-border bg-background/70 px-3 py-2 text-xs font-medium text-muted-foreground transition-all hover:border-primary/30 hover:text-foreground"
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Preview plan view
-              <span className="ml-0.5 text-primary">▾</span>
-            </button>
-
-            {showSwitcher && (
-              <div className="absolute right-0 top-full z-30 mt-2 w-44 overflow-hidden rounded-2xl border border-border/60 bg-popover shadow-xl backdrop-blur-xl">
-                {(["free", "starter", "pro", "agency"] as PlanKey[]).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => { setPreviewPlan(p); setShowSwitcher(false) }}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-2 px-4 py-2.5 text-sm transition-colors hover:bg-primary/5",
-                      previewPlan === p ? "text-primary font-medium" : "text-foreground/80"
-                    )}
-                  >
-                    <span className="capitalize">{p}</span>
-                    {previewPlan === p && <CheckCircle2 className="h-3.5 w-3.5 text-primary" />}
-                    {p === currentPlan && previewPlan !== p && (
-                      <span className="text-[10px] text-muted-foreground">your plan</span>
-                    )}
-                  </button>
-                ))}
-                {isPreview && (
-                  <div className="border-t border-border px-4 py-2.5">
-                    <button
-                      onClick={() => { setPreviewPlan(currentPlan); setShowSwitcher(false) }}
-                      className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                    >
-                      Back to real results
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
@@ -191,6 +213,19 @@ export function AuditResults({ data, onNewAudit, currentPlan }: AuditResultsProp
                 </Button>
               )}
             </div>
+
+            {displayData.findings.length > 0 && (
+              <div className="mt-5 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Key findings
+                </p>
+                {displayData.findings.slice(0, 3).map((finding, idx) => (
+                  <p key={`${finding}-${idx}`} className="text-sm text-foreground/85">
+                    - {finding}
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex justify-center md:justify-end">
@@ -231,6 +266,67 @@ export function AuditResults({ data, onNewAudit, currentPlan }: AuditResultsProp
         </div>
       )}
 
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-border/50 bg-card/70 p-5 backdrop-blur-xl">
+          <p className="text-sm font-semibold text-foreground">Engagement & publishing snapshot</p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {insightChips.map((item) => {
+              const source = resolveSource(item.sourceKey)
+              return (
+              <div key={item.label} className="rounded-xl border border-border/40 bg-background/40 px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-muted-foreground">{item.label}</p>
+                  {source && (
+                    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium", source.className)}>
+                      {source.label}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm font-semibold text-foreground">{item.value}</p>
+              </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-border/50 bg-card/70 p-5 backdrop-blur-xl">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-foreground">Content mix</p>
+            {resolveSource("contentMix") && (
+              <span
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                  resolveSource("contentMix")?.className,
+                )}
+              >
+                {resolveSource("contentMix")?.label}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">Distribution across analyzed content</p>
+          <div className="mt-4 space-y-3">
+            {[
+              { key: "image", label: "Images", value: contentMixStats.image, color: "bg-blue-500" },
+              { key: "carousel", label: "Carousels", value: contentMixStats.carousel, color: "bg-purple-500" },
+              { key: "reel", label: "Reels", value: contentMixStats.reel, color: "bg-emerald-500" },
+            ].map((item) => (
+              <div key={item.key}>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="text-foreground/70">{item.label}</span>
+                  <span className="text-foreground/70">{item.value}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-muted">
+                  <div
+                    className={cn("h-2 rounded-full", item.color)}
+                    style={{ width: `${Math.max(3, Math.min(item.value, 100))}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* ── Metrics grid ──────────────────────────────────────────── */}
       <div>
         <div className="mb-4 flex items-center gap-2">
@@ -242,12 +338,39 @@ export function AuditResults({ data, onNewAudit, currentPlan }: AuditResultsProp
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Object.entries(displayData.metrics).map(([key, metric]) => (
+            {metricEntries.map(([key, metric]) => (
             <MetricCard
               key={key}
               label={METRIC_LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1)}
               metric={metric}
             />
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="mb-4 text-lg font-semibold text-foreground">Per-module details</h3>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {metricEntries.map(([key, metric]) => (
+            <div key={`details-${key}`} className="rounded-2xl border border-border/50 bg-card/70 p-4 backdrop-blur-xl">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-semibold text-foreground">
+                  {METRIC_LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1)}
+                </p>
+                <span className="text-xs font-medium text-muted-foreground">{metric.score}/100</span>
+              </div>
+              {metric.details?.length ? (
+                <ul className="space-y-1">
+                  {metric.details.slice(0, 3).map((detail, idx) => (
+                    <li key={`${key}-d-${idx}`} className="text-xs text-foreground/80">
+                      - {detail}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted-foreground">No findings yet.</p>
+              )}
+            </div>
           ))}
         </div>
       </div>
@@ -291,7 +414,7 @@ export function AuditResults({ data, onNewAudit, currentPlan }: AuditResultsProp
       )}
 
       {/* ── Upgrade CTA ───────────────────────────────────────────── */}
-      {(displayPlan === "free" || displayPlan === "starter") && !isPreview && (
+      {(displayPlan === "free" || displayPlan === "starter") && (
         <div className="rounded-3xl border border-primary/20 bg-gradient-to-r from-primary/8 via-pink-500/5 to-orange-400/8 p-8 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 via-pink-500/15 to-orange-400/20 text-primary">
             <Sparkles className="h-6 w-6" />

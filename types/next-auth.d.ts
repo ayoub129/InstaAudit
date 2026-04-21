@@ -3,6 +3,8 @@ import "next-auth/jwt"
 
 type Plan = "free" | "starter" | "pro" | "agency"
 type Billing = "monthly" | "annual"
+type Role = "user" | "admin"
+type AccountStatus = "active" | "suspended"
 type SubscriptionStatus = "inactive" | "trialing" | "active" | "past_due" | "canceled"
 type CheckoutStatus = "not_started" | "abandoned" | "completed"
 type PaymentProvider = "paypal" | "2checkout" | null
@@ -15,6 +17,8 @@ declare module "next-auth" {
       email?: string | null
       image?: string | null
       emailVerified?: Date | null
+      role?: Role
+      accountStatus?: AccountStatus
 
       selectedPlan?: Plan
       selectedBilling?: Billing
@@ -36,6 +40,8 @@ declare module "next-auth" {
   interface User {
     id: string
     emailVerified?: Date | null
+    role?: Role
+    accountStatus?: AccountStatus
 
     selectedPlan?: Plan
     selectedBilling?: Billing
@@ -59,6 +65,8 @@ declare module "next-auth/jwt" {
   interface JWT {
     id?: string
     emailVerified?: Date | null
+    role?: Role
+    accountStatus?: AccountStatus
 
     selectedPlan?: Plan
     selectedBilling?: Billing

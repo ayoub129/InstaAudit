@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
-import crypto from "crypto"
 import { z } from "zod"
 import { connectDB } from "@/lib/mongodb"
 import { User } from "@/models/User"
 import { sendVerificationEmail } from "@/lib/email"
+import { generateSecureToken, hashToken } from "@/lib/security/tokens"
 
 const resendSchema = z.object({
   email: z.string().trim().email("Valid email is required."),
@@ -40,14 +40,15 @@ export async function POST(request: Request) {
       })
     }
 
-    const token = crypto.randomBytes(32).toString("hex")
+    const token = generateSecureToken()
+    const tokenHash = hashToken(token)
     const expires = new Date(Date.now() + 24 * 60 * 60 * 1000)
 
     await User.updateOne(
       { _id: user._id },
       {
         $set: {
-          verificationToken: token,
+          verificationToken: tokenHash,
           verificationTokenExpires: expires,
         },
       }
