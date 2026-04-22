@@ -4,6 +4,8 @@ type AiScoreResult = {
   rawData: Record<string, unknown>;
 };
 
+import { trackOpenAiApiCall } from "@/lib/analytics/usage-tracker";
+
 const GPT_MODEL = process.env.OPENAI_AUDIT_MODEL || "gpt-4o-mini";
 
 const MODULE_GUIDANCE: Record<string, string> = {
@@ -75,6 +77,8 @@ Return ONLY a JSON object with this exact shape:
 Scoring guidance for ${moduleName}:
 ${guidance}
 `;
+
+  await trackOpenAiApiCall(GPT_MODEL);
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",

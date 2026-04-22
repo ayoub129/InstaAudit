@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Download, FileText, Calendar, RefreshCw } from "lucide-react";
+import { Download, FileText, Calendar, RefreshCw, Trash2 } from "lucide-react";
 
 type ReportItem = {
   id: string;
@@ -27,6 +27,7 @@ export function ReportsClient() {
   const [creatingCustom, setCreatingCustom] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
 
   async function loadReports() {
     setLoading(true);
@@ -66,6 +67,22 @@ export function ReportsClient() {
       await loadReports();
     } finally {
       setCreatingCustom(false);
+    }
+  }
+
+  async function deleteReport(reportId: string) {
+    const confirmed = window.confirm(
+      "Delete this report? This action cannot be undone.",
+    );
+    if (!confirmed) return;
+
+    setDeletingReportId(reportId);
+    try {
+      const res = await fetch(`/api/reports/${reportId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete report");
+      await loadReports();
+    } finally {
+      setDeletingReportId(null);
     }
   }
 
@@ -170,6 +187,16 @@ export function ReportsClient() {
                     <Download className="h-4 w-4" />
                     PDF
                   </a>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="bg-transparent text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/40"
+                  onClick={() => deleteReport(report.id)}
+                  disabled={deletingReportId === report.id}
+                  aria-label={`Delete report ${report.title}`}
+                >
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             </CardContent>

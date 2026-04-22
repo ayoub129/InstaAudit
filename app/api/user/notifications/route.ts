@@ -6,8 +6,6 @@ import { User } from "@/models/User"
 
 const DEFAULT_PREFS = {
   emailNotifications: true,
-  auditAlerts: true,
-  weeklyDigest: false,
   productUpdates: true,
 }
 
@@ -45,13 +43,11 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json()
-    const { emailNotifications, auditAlerts, weeklyDigest, productUpdates } = body
+    const { emailNotifications, productUpdates } = body
 
     const prefs: Record<string, boolean> = {}
 
     if (typeof emailNotifications === "boolean") prefs["notificationPrefs.emailNotifications"] = emailNotifications
-    if (typeof auditAlerts === "boolean") prefs["notificationPrefs.auditAlerts"] = auditAlerts
-    if (typeof weeklyDigest === "boolean") prefs["notificationPrefs.weeklyDigest"] = weeklyDigest
     if (typeof productUpdates === "boolean") prefs["notificationPrefs.productUpdates"] = productUpdates
 
     if (Object.keys(prefs).length === 0) {

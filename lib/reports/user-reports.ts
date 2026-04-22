@@ -9,12 +9,40 @@ type ReportSummary = {
   avgScore: number
   bestScore: number
   profilesAnalyzed: number
+  avgEngagementRate: number
+  totalPostsAnalyzed: number
+  totalReelsAnalyzed: number
+  topHandle: string | null
   scoreDistribution: {
     poor: number
     fair: number
     good: number
     excellent: number
   }
+  handles: Array<{
+    handle: string
+    audits: number
+    avgScore: number
+    bestScore: number
+    avgEngagementRate: number
+    postsAnalyzed: number
+    reelsAnalyzed: number
+    latestAuditAt: string
+    scoreDistribution: {
+      poor: number
+      fair: number
+      good: number
+      excellent: number
+    }
+  }>
+  recentAudits: Array<{
+    handle: string
+    score: number
+    engagementRate: number
+    postsAnalyzed: number
+    reelsAnalyzed: number
+    createdAt: string
+  }>
 }
 
 export type UserReportListItem = {
@@ -65,7 +93,8 @@ async function buildSummary(userId: mongoose.Types.ObjectId, startDate: Date, en
     userId,
     createdAt: { $gte: startDate, $lt: endDate },
   })
-    .select("handle result.overallScore")
+    .select("handle result.overallScore avgEngagementRate postsAnalyzed reelsAnalyzed createdAt")
+    .sort({ createdAt: -1 })
     .lean()
 
   const scores = audits
@@ -75,13 +104,104 @@ async function buildSummary(userId: mongoose.Types.ObjectId, startDate: Date, en
   const avgScore = totalAudits ? Math.round(scores.reduce((sum, score) => sum + score, 0) / totalAudits) : 0
   const bestScore = totalAudits ? Math.max(...scores) : 0
   const profilesAnalyzed = new Set(audits.map((audit: any) => String(audit.handle ?? "").toLowerCase()).filter(Boolean)).size
+  const avgEngagementRate = totalAudits
+    ? Number(
+        (
+          audits.reduce((sum: number, audit: any) => sum + Number(audit.avgEngagementRate ?? 0), 0) / totalAudits
+        ).toFixed(2),
+      )
+    : 0
+  const totalPostsAnalyzed = audits.reduce((sum: number, audit: any) => sum + Number(audit.postsAnalyzed ?? 0), 0)
+  const totalReelsAnalyzed = audits.reduce((sum: number, audit: any) => sum + Number(audit.reelsAnalyzed ?? 0), 0)
+
+  const handleMap = new Map<
+    string,
+    {
+      handle: string
+      scores: number[]
+      engagementRates: number[]
+      postsAnalyzed: number
+      reelsAnalyzed: number
+      latestAuditAt: Date
+    }
+  >()
+
+  for (const audit of audits as any[]) {
+    const rawHandle = String(audit?.handle ?? "").trim().replace(/^@/, "").toLowerCase()
+    if (!rawHandle) continue
+
+    const score = Number(audit?.result?.overallScore ?? 0)
+    const engagementRate = Number(audit?.avgEngagementRate ?? 0)
+    const postsAnalyzed = Number(audit?.postsAnalyzed ?? 0)
+    const reelsAnalyzed = Number(audit?.reelsAnalyzed ?? 0)
+    const createdAt = new Date(audit?.createdAt ?? 0)
+
+    const current = handleMap.get(rawHandle) ?? {
+      handle: rawHandle,
+      scores: [],
+      engagementRates: [],
+      postsAnalyzed: 0,
+      reelsAnalyzed: 0,
+      latestAuditAt: createdAt,
+    }
+
+    if (Number.isFinite(score)) current.scores.push(score)
+    if (Number.isFinite(engagementRate)) current.engagementRates.push(engagementRate)
+    current.postsAnalyzed += Number.isFinite(postsAnalyzed) ? postsAnalyzed : 0
+    current.reelsAnalyzed += Number.isFinite(reelsAnalyzed) ? reelsAnalyzed : 0
+    if (createdAt > current.latestAuditAt) current.latestAuditAt = createdAt
+
+    handleMap.set(rawHandle, current)
+  }
+
+  const handles = Array.from(handleMap.values())
+    .map((item) => {
+      const auditsCount = item.scores.length
+      const avgHandleScore = auditsCount
+        ? Math.round(item.scores.reduce((sum, score) => sum + score, 0) / auditsCount)
+        : 0
+      const avgHandleEngagement = item.engagementRates.length
+        ? Number(
+            (
+              item.engagementRates.reduce((sum, rate) => sum + rate, 0) / item.engagementRates.length
+            ).toFixed(2),
+          )
+        : 0
+      return {
+        handle: item.handle,
+        audits: auditsCount,
+        avgScore: avgHandleScore,
+        bestScore: auditsCount ? Math.max(...item.scores) : 0,
+        avgEngagementRate: avgHandleEngagement,
+        postsAnalyzed: item.postsAnalyzed,
+        reelsAnalyzed: item.reelsAnalyzed,
+        latestAuditAt: item.latestAuditAt.toISOString(),
+        scoreDistribution: calcDistribution(item.scores),
+      }
+    })
+    .sort((a, b) => b.audits - a.audits || b.avgScore - a.avgScore)
+
+  const recentAudits = (audits as any[]).slice(0, 50).map((audit) => ({
+    handle: String(audit?.handle ?? "").replace(/^@/, "").toLowerCase(),
+    score: Number(audit?.result?.overallScore ?? 0),
+    engagementRate: Number(audit?.avgEngagementRate ?? 0),
+    postsAnalyzed: Number(audit?.postsAnalyzed ?? 0),
+    reelsAnalyzed: Number(audit?.reelsAnalyzed ?? 0),
+    createdAt: new Date(audit?.createdAt ?? Date.now()).toISOString(),
+  }))
 
   return {
     totalAudits,
     avgScore,
     bestScore,
     profilesAnalyzed,
+    avgEngagementRate,
+    totalPostsAnalyzed,
+    totalReelsAnalyzed,
+    topHandle: handles[0]?.handle ?? null,
     scoreDistribution: calcDistribution(scores),
+    handles,
+    recentAudits,
   }
 }
 
@@ -182,17 +302,43 @@ export async function getUserReport(userId: string, reportId: string) {
   return report as any
 }
 
+export async function deleteUserReport(userId: string, reportId: string): Promise<boolean> {
+  await connectDB()
+  if (!mongoose.Types.ObjectId.isValid(reportId)) return false
+
+  const deleted = await UserReport.deleteOne({
+    _id: new mongoose.Types.ObjectId(reportId),
+    userId: new mongoose.Types.ObjectId(userId),
+  })
+
+  return deleted.deletedCount > 0
+}
+
 export async function buildReportPdfBuffer(report: any): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create()
-  const page = pdfDoc.addPage([595, 842])
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
   const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+  const pageWidth = 595
+  const pageHeight = 842
+  const left = 44
+  const right = pageWidth - 44
+  let page = pdfDoc.addPage([pageWidth, pageHeight])
+  let y = pageHeight - 46
+  const lineHeight = 18
 
-  let y = 790
-  const left = 50
-  const lineHeight = 20
+  const summary = report.summary ?? {}
+  const distribution = summary.scoreDistribution ?? {}
+  const handleRows = Array.isArray(summary.handles) ? summary.handles : []
+  const recentRows = Array.isArray(summary.recentAudits) ? summary.recentAudits : []
+
+  function ensureSpace(minY: number) {
+    if (y >= minY) return
+    page = pdfDoc.addPage([pageWidth, pageHeight])
+    y = pageHeight - 46
+  }
 
   function drawLine(text: string, opts?: { bold?: boolean; size?: number; color?: [number, number, number] }) {
+    ensureSpace(56)
     const size = opts?.size ?? 12
     const color = opts?.color ?? [0.1, 0.1, 0.1]
     page.drawText(text, {
@@ -205,47 +351,168 @@ export async function buildReportPdfBuffer(report: any): Promise<Buffer> {
     y -= lineHeight
   }
 
-  drawLine("InstaAudit Report", { bold: true, size: 22 })
+  function drawSectionTitle(text: string) {
+    ensureSpace(88)
+    page.drawRectangle({
+      x: left,
+      y: y - 4,
+      width: right - left,
+      height: 24,
+      color: rgb(0.96, 0.94, 0.99),
+      borderWidth: 0,
+    })
+    drawLine(text, { bold: true, size: 12, color: [0.32, 0.2, 0.58] })
+  }
+
+  drawLine("InstaAudit Performance Report", { bold: true, size: 24, color: [0.22, 0.14, 0.45] })
   drawLine(report.title ?? "Report", { bold: true, size: 14 })
   drawLine(
     `Period: ${new Date(report.startDate).toLocaleDateString()} - ${new Date(report.endDate).toLocaleDateString()}`,
     { size: 10, color: [0.4, 0.4, 0.4] },
   )
-  y -= 10
-  drawLine("Summary", { bold: true, size: 13 })
-  drawLine(`Total audits: ${report.summary?.totalAudits ?? 0}`)
-  drawLine(`Average score: ${report.summary?.avgScore ?? 0}/100`)
-  drawLine(`Best score: ${report.summary?.bestScore ?? 0}/100`)
-  drawLine(`Profiles analyzed: ${report.summary?.profilesAnalyzed ?? 0}`)
-  y -= 10
-  drawLine("Score distribution", { bold: true, size: 13 })
-  const distribution = report.summary?.scoreDistribution ?? {}
+  drawLine(`Generated: ${new Date().toLocaleString()}`, { size: 10, color: [0.4, 0.4, 0.4] })
+  y -= 8
+
+  drawSectionTitle("Executive Summary")
+  drawLine(`Total audits: ${summary.totalAudits ?? 0}`)
+  drawLine(`Profiles analyzed: ${summary.profilesAnalyzed ?? 0}`)
+  drawLine(`Average score: ${summary.avgScore ?? 0}/100`)
+  drawLine(`Best score: ${summary.bestScore ?? 0}/100`)
+  drawLine(`Average engagement rate: ${summary.avgEngagementRate ?? 0}%`)
+  drawLine(`Posts analyzed: ${summary.totalPostsAnalyzed ?? 0}`)
+  drawLine(`Reels analyzed: ${summary.totalReelsAnalyzed ?? 0}`)
+  drawLine(`Top handle by activity: ${summary.topHandle ? `@${summary.topHandle}` : "N/A"}`)
+  y -= 6
+
+  drawSectionTitle("Score Distribution")
   drawLine(`Poor (0-39): ${distribution.poor ?? 0}`)
   drawLine(`Fair (40-59): ${distribution.fair ?? 0}`)
   drawLine(`Good (60-79): ${distribution.good ?? 0}`)
   drawLine(`Excellent (80-100): ${distribution.excellent ?? 0}`)
-  y -= 10
-  drawLine(`Generated on ${new Date().toLocaleString()}`, { size: 9, color: [0.4, 0.4, 0.4] })
+  y -= 6
+
+  drawSectionTitle("Per-Handle Breakdown")
+  if (!handleRows.length) {
+    drawLine("No handle-level data available for this period.", { size: 10, color: [0.4, 0.4, 0.4] })
+  } else {
+    for (const handle of handleRows) {
+      ensureSpace(120)
+      drawLine(`@${handle.handle}`, { bold: true, size: 11 })
+      drawLine(
+        `Audits: ${handle.audits} | Avg: ${handle.avgScore}/100 | Best: ${handle.bestScore}/100 | Engagement: ${handle.avgEngagementRate}%`,
+        { size: 10 },
+      )
+      drawLine(
+        `Posts: ${handle.postsAnalyzed} | Reels: ${handle.reelsAnalyzed} | Latest: ${new Date(handle.latestAuditAt).toLocaleDateString()}`,
+        { size: 10, color: [0.35, 0.35, 0.35] },
+      )
+      drawLine(
+        `Distribution: Poor ${handle.scoreDistribution.poor} • Fair ${handle.scoreDistribution.fair} • Good ${handle.scoreDistribution.good} • Excellent ${handle.scoreDistribution.excellent}`,
+        { size: 9, color: [0.45, 0.45, 0.45] },
+      )
+      y -= 4
+    }
+  }
+
+  drawSectionTitle("Recent Audit Entries")
+  if (!recentRows.length) {
+    drawLine("No recent audits available.", { size: 10, color: [0.4, 0.4, 0.4] })
+  } else {
+    for (const audit of recentRows.slice(0, 20)) {
+      ensureSpace(72)
+      drawLine(
+        `${new Date(audit.createdAt).toLocaleDateString()}  @${audit.handle}  Score ${audit.score}/100  Engagement ${audit.engagementRate}%`,
+        { size: 9 },
+      )
+    }
+  }
 
   const bytes = await pdfDoc.save()
   return Buffer.from(bytes)
 }
 
 export function buildReportCsv(report: any): string {
-  const distribution = report.summary?.scoreDistribution ?? {}
-  const rows = [
-    ["field", "value"],
-    ["title", report.title ?? ""],
-    ["startDate", new Date(report.startDate).toISOString()],
-    ["endDate", new Date(report.endDate).toISOString()],
-    ["totalAudits", String(report.summary?.totalAudits ?? 0)],
-    ["avgScore", String(report.summary?.avgScore ?? 0)],
-    ["bestScore", String(report.summary?.bestScore ?? 0)],
-    ["profilesAnalyzed", String(report.summary?.profilesAnalyzed ?? 0)],
-    ["distribution_poor", String(distribution.poor ?? 0)],
-    ["distribution_fair", String(distribution.fair ?? 0)],
-    ["distribution_good", String(distribution.good ?? 0)],
-    ["distribution_excellent", String(distribution.excellent ?? 0)],
-  ]
-  return rows.map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n")
+  const summary = report.summary ?? {}
+  const distribution = summary.scoreDistribution ?? {}
+  const handles = Array.isArray(summary.handles) ? summary.handles : []
+  const recentAudits = Array.isArray(summary.recentAudits) ? summary.recentAudits : []
+
+  const encodeRow = (row: Array<string | number>) =>
+    row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")
+
+  const sections: string[] = []
+
+  sections.push(
+    [
+      encodeRow(["section", "field", "value"]),
+      encodeRow(["metadata", "title", report.title ?? ""]),
+      encodeRow(["metadata", "startDate", new Date(report.startDate).toISOString()]),
+      encodeRow(["metadata", "endDate", new Date(report.endDate).toISOString()]),
+      encodeRow(["summary", "totalAudits", summary.totalAudits ?? 0]),
+      encodeRow(["summary", "avgScore", summary.avgScore ?? 0]),
+      encodeRow(["summary", "bestScore", summary.bestScore ?? 0]),
+      encodeRow(["summary", "profilesAnalyzed", summary.profilesAnalyzed ?? 0]),
+      encodeRow(["summary", "avgEngagementRate", summary.avgEngagementRate ?? 0]),
+      encodeRow(["summary", "totalPostsAnalyzed", summary.totalPostsAnalyzed ?? 0]),
+      encodeRow(["summary", "totalReelsAnalyzed", summary.totalReelsAnalyzed ?? 0]),
+      encodeRow(["summary", "topHandle", summary.topHandle ?? ""]),
+      encodeRow(["distribution", "poor", distribution.poor ?? 0]),
+      encodeRow(["distribution", "fair", distribution.fair ?? 0]),
+      encodeRow(["distribution", "good", distribution.good ?? 0]),
+      encodeRow(["distribution", "excellent", distribution.excellent ?? 0]),
+    ].join("\n"),
+  )
+
+  sections.push(
+    [
+      encodeRow([
+        "handle",
+        "audits",
+        "avgScore",
+        "bestScore",
+        "avgEngagementRate",
+        "postsAnalyzed",
+        "reelsAnalyzed",
+        "latestAuditAt",
+        "poor",
+        "fair",
+        "good",
+        "excellent",
+      ]),
+      ...handles.map((handle) =>
+        encodeRow([
+          handle.handle,
+          handle.audits,
+          handle.avgScore,
+          handle.bestScore,
+          handle.avgEngagementRate,
+          handle.postsAnalyzed,
+          handle.reelsAnalyzed,
+          handle.latestAuditAt,
+          handle.scoreDistribution?.poor ?? 0,
+          handle.scoreDistribution?.fair ?? 0,
+          handle.scoreDistribution?.good ?? 0,
+          handle.scoreDistribution?.excellent ?? 0,
+        ]),
+      ),
+    ].join("\n"),
+  )
+
+  sections.push(
+    [
+      encodeRow(["auditDate", "handle", "score", "engagementRate", "postsAnalyzed", "reelsAnalyzed"]),
+      ...recentAudits.map((audit) =>
+        encodeRow([
+          audit.createdAt,
+          audit.handle,
+          audit.score,
+          audit.engagementRate,
+          audit.postsAnalyzed,
+          audit.reelsAnalyzed,
+        ]),
+      ),
+    ].join("\n"),
+  )
+
+  return sections.join("\n\n")
 }

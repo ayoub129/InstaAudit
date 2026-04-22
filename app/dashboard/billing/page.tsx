@@ -121,6 +121,8 @@ export default function BillingPage() {
   const isPaid = status === "active" && !isFreePlan
 
   const currentPrice = billing === "annual" ? planCfg.annualPrice : planCfg.monthlyPrice
+  const nextBillingDateLabel =
+    periodEnd && isPaid ? format(new Date(periodEnd), "MMMM d, yyyy") : null
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -231,6 +233,21 @@ export default function BillingPage() {
 
               {/* Included features */}
               <div className="mt-5 border-t border-border/40 pt-5">
+                {isPaid && (
+                  <div className="mb-4 rounded-2xl border border-border/60 bg-background/60 px-4 py-3">
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                      Next billing date
+                    </p>
+                    <div className="mt-1 flex items-center gap-2 text-sm text-foreground">
+                      <Calendar className="h-4 w-4 text-primary" />
+                      <span>
+                        {nextBillingDateLabel ??
+                          "Not available yet. Please refresh in a few seconds."}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <p className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Included in your plan
                 </p>

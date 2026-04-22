@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Instagram,
   Link2,
-  Loader2,
   Lock,
 } from "lucide-react"
 import { Card } from "@/components/ui/card"
@@ -17,6 +16,8 @@ import { Button } from "@/components/ui/button"
 interface ProfileInputProps {
   onAudit: (username: string) => void
   loading: boolean
+  auditProgress?: number
+  auditPhase?: string
   plan: "free" | "starter" | "pro" | "agency"
   auditsRemainingText: string
   canRunAudit: boolean
@@ -30,6 +31,8 @@ const quickSuggestions = ["creatorhub", "brandstudio", "growthcoach", "agencymod
 export function ProfileInput({
   onAudit,
   loading,
+  auditProgress = 0,
+  auditPhase = "Running audit",
   plan,
   auditsRemainingText,
   canRunAudit,
@@ -121,10 +124,7 @@ export function ProfileInput({
                 className="h-14 rounded-2xl bg-gradient-to-r from-primary via-pink-500 to-orange-400 px-6 text-white hover:opacity-95"
               >
                 {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Running audit...
-                  </>
+                  `${Math.round(auditProgress)}%`
                 ) : !canRunAudit ? (
                   "Limit reached"
                 ) : (
@@ -136,6 +136,20 @@ export function ProfileInput({
               </Button>
             </div>
 
+            {loading && (
+              <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                  <span className="font-medium text-foreground">{auditPhase}</span>
+                  <span className="font-semibold text-primary">{Math.round(auditProgress)}%</span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-background/70">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-primary via-pink-500 to-orange-400 transition-all duration-500"
+                    style={{ width: `${Math.max(6, Math.min(100, auditProgress))}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </form>
 

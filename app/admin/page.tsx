@@ -9,6 +9,9 @@ import Payment from "@/models/Payment"
 import { SupportTicket } from "@/models/SupportTicket"
 import { getAdminChurnReport, getAdminFunnelReport } from "@/lib/analytics/get-admin-reports"
 import { DashboardNav } from "@/components/dashboard/dashboard-nav"
+import { ApiUsageMetric } from "@/models/ApiUsageMetric"
+import { AdminFinanceSettings } from "@/models/AdminFinanceSettings"
+import { AdminFinanceControls } from "./admin-finance-controls"
 
 function formatMoney(amount: number) {
   return new Intl.NumberFormat("en-US", {
@@ -23,7 +26,44 @@ function pct(part: number, whole: number) {
   return `${Math.round((part / whole) * 100)}%`
 }
 
-export default async function AdminPage() {
+function dayKey(date: Date) {
+  return date.toISOString().slice(0, 10)
+}
+
+type FeeConfig = {
+  starterMonthly: number
+  starterAnnual: number
+  proMonthly: number
+  proAnnual: number
+  agencyMonthly: number
+  agencyAnnual: number
+}
+
+const emptyFees: FeeConfig = {
+  starterMonthly: 0,
+  starterAnnual: 0,
+  proMonthly: 0,
+  proAnnual: 0,
+  agencyMonthly: 0,
+  agencyAnnual: 0,
+}
+
+function feeKey(planSlug: string, billingCycle: string): keyof FeeConfig | null {
+  const key = `${String(planSlug)}-${String(billingCycle)}`
+  if (key === "starter-monthly") return "starterMonthly"
+  if (key === "starter-annual") return "starterAnnual"
+  if (key === "pro-monthly") return "proMonthly"
+  if (key === "pro-annual") return "proAnnual"
+  if (key === "agency-monthly") return "agencyMonthly"
+  if (key === "agency-annual") return "agencyAnnual"
+  return null
+}
+
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams?: { startDate?: string; endDate?: string }
+}) {
   const session = await getServerSession(authOptions)
 
   if (!session?.user?.email) {
@@ -37,23 +77,38 @@ export default async function AdminPage() {
   await connectDB()
 
   const now = new Date()
-  const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-  const last30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const defaultStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const defaultEnd = now
+
+  const paramsRaw = searchParams ?? {}
+  const startDateParam = paramsRaw.startDate
+  const endDateParam = paramsRaw.endDate
+  const startDateCandidate = startDateParam ? new Date(startDateParam) : defaultStart
+  const endDateCandidate = endDateParam ? new Date(endDateParam) : defaultEnd
+  const startDate = Number.isFinite(startDateCandidate.getTime()) ? startDateCandidate : defaultStart
+  const endDate = Number.isFinite(endDateCandidate.getTime()) ? endDateCandidate : defaultEnd
+  const rangeStart = startDate <= endDate ? startDate : defaultStart
+  const rangeEnd = startDate <= endDate ? endDate : defaultEnd
+  const rangeDays = Math.max(
+    1,
+    Math.floor((rangeEnd.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000)) + 1,
+  )
+  const rangeStartDayKey = dayKey(rangeStart)
 
   const [
     totalUsers,
     totalAdmins,
     suspendedUsers,
     verifiedUsers,
-    newUsers7d,
+    newUsersInRange,
     activeSubscribers,
     pastDueSubscribers,
     canceledSubscribers,
     totalAudits,
-    audits7d,
+    auditsInRange,
     completedPayments,
     failedPayments,
-    payments30dAgg,
+    paymentsInRangeAgg,
     revenueAgg,
     planMixAgg,
     supportOpen,
@@ -64,12 +119,16 @@ export default async function AdminPage() {
     recentUsers,
     recentPayments,
     recentAudits,
+    scraperUsageInRangeAgg,
+    openAiUsageInRangeAgg,
+    feeMixInRangeAgg,
+    financeSettingsDoc,
   ] = await Promise.all([
     User.countDocuments({}),
     User.countDocuments({ role: "admin" }),
     User.countDocuments({ accountStatus: "suspended" }),
     User.countDocuments({ emailVerified: { $ne: null } }),
-    User.countDocuments({ createdAt: { $gte: last7d } }),
+    User.countDocuments({ createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
     User.countDocuments({
       subscriptionStatus: "active",
       subscriptionPlan: { $in: ["starter", "pro", "agency"] },
@@ -77,12 +136,12 @@ export default async function AdminPage() {
     User.countDocuments({ subscriptionStatus: "past_due" }),
     User.countDocuments({ subscriptionStatus: "canceled" }),
     Audit.countDocuments({}),
-    Audit.countDocuments({ createdAt: { $gte: last7d } }),
+    Audit.countDocuments({ createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
     Payment.countDocuments({ status: "completed" }),
     Payment.countDocuments({ status: "failed" }),
     Payment.aggregate([
-      { $match: { status: "completed", createdAt: { $gte: last30d } } },
-      { $group: { _id: null, totalRevenue30d: { $sum: "$amount" }, totalPayments30d: { $sum: 1 } } },
+      { $match: { status: "completed", createdAt: { $gte: rangeStart, $lte: rangeEnd } } },
+      { $group: { _id: null, totalRevenueInRange: { $sum: "$amount" }, totalPaymentsInRange: { $sum: 1 } } },
     ]),
     Payment.aggregate([
       { $match: { status: "completed" } },
@@ -95,28 +154,50 @@ export default async function AdminPage() {
     SupportTicket.countDocuments({ status: "open" }),
     SupportTicket.countDocuments({ status: "in_progress" }),
     SupportTicket.countDocuments({ status: "resolved" }),
-    getAdminFunnelReport(30),
-    getAdminChurnReport(30),
-    User.find({})
+    getAdminFunnelReport(rangeDays),
+    getAdminChurnReport(rangeDays),
+    User.find({ createdAt: { $gte: rangeStart, $lte: rangeEnd } })
       .sort({ createdAt: -1 })
       .limit(6)
       .select("name email createdAt subscriptionPlan")
       .lean(),
-    Payment.find({})
+    Payment.find({ createdAt: { $gte: rangeStart, $lte: rangeEnd } })
       .sort({ createdAt: -1 })
       .limit(6)
       .select("amount currency status planSlug billingCycle createdAt")
       .lean(),
-    Audit.find({})
+    Audit.find({ createdAt: { $gte: rangeStart, $lte: rangeEnd } })
       .sort({ createdAt: -1 })
       .limit(6)
       .select("handle planAtRun createdAt")
       .lean(),
+    ApiUsageMetric.aggregate([
+      { $match: { metricType: "scraper_api", day: { $gte: rangeStartDayKey } } },
+      { $group: { _id: null, total: { $sum: "$count" } } },
+    ]),
+    ApiUsageMetric.aggregate([
+      { $match: { metricType: "openai_api", day: { $gte: rangeStartDayKey } } },
+      { $group: { _id: null, total: { $sum: "$count" } } },
+    ]),
+    Payment.aggregate([
+      { $match: { status: "completed", createdAt: { $gte: rangeStart, $lte: rangeEnd } } },
+      {
+        $group: {
+          _id: {
+            provider: "$provider",
+            planSlug: "$planSlug",
+            billingCycle: "$billingCycle",
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    AdminFinanceSettings.findOne({ key: "default" }).lean(),
   ])
 
   const totalRevenue = Number(revenueAgg[0]?.totalRevenue ?? 0)
-  const revenue30d = Number(payments30dAgg[0]?.totalRevenue30d ?? 0)
-  const payments30d = Number(payments30dAgg[0]?.totalPayments30d ?? 0)
+  const revenueInRange = Number(paymentsInRangeAgg[0]?.totalRevenueInRange ?? 0)
+  const paymentsInRange = Number(paymentsInRangeAgg[0]?.totalPaymentsInRange ?? 0)
   const activeRate = pct(activeSubscribers, totalUsers)
   const verifiedRate = pct(verifiedUsers, totalUsers)
   const maxFunnel = Math.max(...funnelReport.steps.map((step) => step.count), 1)
@@ -126,6 +207,37 @@ export default async function AdminPage() {
     pro: Number(planMixAgg.find((p: any) => p._id === "pro")?.count ?? 0),
     agency: Number(planMixAgg.find((p: any) => p._id === "agency")?.count ?? 0),
   }
+  const financeSettings = {
+    domainYearlyCost: Number((financeSettingsDoc as any)?.domainYearlyCost ?? 0),
+    hostingMonthlyCost: Number((financeSettingsDoc as any)?.hostingMonthlyCost ?? 0),
+    scraperMonthlyCost: Number((financeSettingsDoc as any)?.scraperMonthlyCost ?? 0),
+    openAiCostPerCall: Number((financeSettingsDoc as any)?.openAiCostPerCall ?? 0),
+    paypalFees: { ...emptyFees, ...((financeSettingsDoc as any)?.paypalFees ?? {}) },
+    twoCheckoutFees: { ...emptyFees, ...((financeSettingsDoc as any)?.twoCheckoutFees ?? {}) },
+  }
+  const scraperApiCallsInRange = Number(scraperUsageInRangeAgg[0]?.total ?? 0)
+  const openAiCallsInRange = Number(openAiUsageInRangeAgg[0]?.total ?? 0)
+  const openAiEstimatedCostInRange = openAiCallsInRange * financeSettings.openAiCostPerCall
+  const fixedMonthlyCosts =
+    financeSettings.domainYearlyCost / 12 +
+    financeSettings.hostingMonthlyCost +
+    financeSettings.scraperMonthlyCost
+  const processorFeesInRange = feeMixInRangeAgg.reduce((sum: number, row: any) => {
+    const provider = String(row?._id?.provider ?? "")
+    const planSlug = String(row?._id?.planSlug ?? "")
+    const billingCycle = String(row?._id?.billingCycle ?? "")
+    const count = Number(row?.count ?? 0)
+    const key = feeKey(planSlug, billingCycle)
+    if (!key) return sum
+    if (provider === "paypal") {
+      return sum + count * Number(financeSettings.paypalFees[key] ?? 0)
+    }
+    if (provider === "2checkout") {
+      return sum + count * Number(financeSettings.twoCheckoutFees[key] ?? 0)
+    }
+    return sum
+  }, 0)
+  const netProfitInRange = revenueInRange - openAiEstimatedCostInRange - fixedMonthlyCosts - processorFeesInRange
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -141,9 +253,45 @@ export default async function AdminPage() {
                 <p className="mt-2 text-sm text-muted-foreground">
                   Real-time operational snapshot for users, subscriptions, revenue, audits, and support health.
                 </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Active range: {rangeStart.toLocaleDateString()} - {rangeEnd.toLocaleDateString()}
+                </p>
               </div>
 
               <div className="flex items-center gap-2">
+                <AdminFinanceControls initialSettings={financeSettings} />
+                <form className="flex items-end gap-2 rounded-xl border border-border/60 bg-background/50 px-3 py-2" method="GET">
+                  <label className="text-[11px] text-muted-foreground">
+                    From
+                    <input
+                      name="startDate"
+                      type="date"
+                      defaultValue={rangeStart.toISOString().slice(0, 10)}
+                      className="mt-1 block rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+                    />
+                  </label>
+                  <label className="text-[11px] text-muted-foreground">
+                    To
+                    <input
+                      name="endDate"
+                      type="date"
+                      defaultValue={rangeEnd.toISOString().slice(0, 10)}
+                      className="mt-1 block rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-xs font-medium hover:bg-muted/40"
+                  >
+                    Apply
+                  </button>
+                  <Link
+                    href="/admin"
+                    className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-xs font-medium hover:bg-muted/40"
+                  >
+                    Reset
+                  </Link>
+                </form>
                 <Link
                   href="/admin/users"
                   className="inline-flex h-10 items-center rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted/40"
@@ -170,7 +318,7 @@ export default async function AdminPage() {
             <div className="rounded-3xl border border-border/50 bg-card/70 p-5 shadow-sm backdrop-blur-xl">
               <p className="text-sm text-muted-foreground">Total users</p>
               <p className="mt-2 text-2xl font-semibold">{totalUsers}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{newUsers7d} joined in last 7 days</p>
+              <p className="mt-1 text-xs text-muted-foreground">{newUsersInRange} joined in selected range</p>
             </div>
             <div className="rounded-3xl border border-border/50 bg-card/70 p-5 shadow-sm backdrop-blur-xl">
               <p className="text-sm text-muted-foreground">Admins</p>
@@ -185,7 +333,7 @@ export default async function AdminPage() {
             <div className="rounded-3xl border border-border/50 bg-card/70 p-5 shadow-sm backdrop-blur-xl">
               <p className="text-sm text-muted-foreground">Total audits</p>
               <p className="mt-2 text-2xl font-semibold">{totalAudits}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{audits7d} audits in last 7 days</p>
+              <p className="mt-1 text-xs text-muted-foreground">{auditsInRange} audits in selected range</p>
             </div>
             <div className="rounded-3xl border border-border/50 bg-card/70 p-5 shadow-sm backdrop-blur-xl">
               <p className="text-sm text-muted-foreground">Completed payments</p>
@@ -195,7 +343,7 @@ export default async function AdminPage() {
             <div className="rounded-3xl border border-border/50 bg-card/70 p-5 shadow-sm backdrop-blur-xl">
               <p className="text-sm text-muted-foreground">Revenue (completed)</p>
               <p className="mt-2 text-2xl font-semibold">{formatMoney(totalRevenue)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{formatMoney(revenue30d)} in last 30 days ({payments30d} payments)</p>
+              <p className="mt-1 text-xs text-muted-foreground">{formatMoney(revenueInRange)} in selected range ({paymentsInRange} payments)</p>
             </div>
             <div className="rounded-3xl border border-border/50 bg-card/70 p-5 shadow-sm backdrop-blur-xl">
               <p className="text-sm text-muted-foreground">Support queue</p>
@@ -206,6 +354,43 @@ export default async function AdminPage() {
               <p className="text-sm text-muted-foreground">Email verification</p>
               <p className="mt-2 text-2xl font-semibold">{verifiedRate}</p>
               <p className="mt-1 text-xs text-muted-foreground">{verifiedUsers} verified users</p>
+            </div>
+          </section>
+
+          <section className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="rounded-3xl border border-primary/30 bg-primary/5 p-5 shadow-sm backdrop-blur-xl">
+              <p className="text-sm text-muted-foreground">Scraper API calls</p>
+              <p className="mt-2 text-2xl font-semibold">{scraperApiCallsInRange}</p>
+              <p className="mt-1 text-xs text-muted-foreground">RapidAPI + Instagram scraper calls in selected range</p>
+            </div>
+            <div className="rounded-3xl border border-primary/30 bg-primary/5 p-5 shadow-sm backdrop-blur-xl">
+              <p className="text-sm text-muted-foreground">OpenAI API calls</p>
+              <p className="mt-2 text-2xl font-semibold">{openAiCallsInRange}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Scoring and AI tip generation calls</p>
+            </div>
+            <div className="rounded-3xl border border-primary/30 bg-primary/5 p-5 shadow-sm backdrop-blur-xl">
+              <p className="text-sm text-muted-foreground">OpenAI estimated cost</p>
+              <p className="mt-2 text-2xl font-semibold">{formatMoney(openAiEstimatedCostInRange)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {formatMoney(financeSettings.openAiCostPerCall)} per call (manual input)
+              </p>
+            </div>
+            <div className="rounded-3xl border border-primary/30 bg-primary/5 p-5 shadow-sm backdrop-blur-xl">
+              <p className="text-sm text-muted-foreground">Infrastructure costs (monthly)</p>
+              <p className="mt-2 text-2xl font-semibold">{formatMoney(fixedMonthlyCosts)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Domain yearly + hosting monthly + scraper monthly
+              </p>
+            </div>
+            <div className="rounded-3xl border border-primary/30 bg-primary/5 p-5 shadow-sm backdrop-blur-xl">
+              <p className="text-sm text-muted-foreground">Processor fees</p>
+              <p className="mt-2 text-2xl font-semibold">{formatMoney(processorFeesInRange)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">PayPal + 2Checkout fees from configured per-plan values</p>
+            </div>
+            <div className="rounded-3xl border border-emerald-500/30 bg-emerald-500/10 p-5 shadow-sm backdrop-blur-xl">
+              <p className="text-sm text-muted-foreground">Net profit</p>
+              <p className="mt-2 text-2xl font-semibold">{formatMoney(netProfitInRange)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Revenue - OpenAI - infra - processor fees</p>
             </div>
           </section>
 

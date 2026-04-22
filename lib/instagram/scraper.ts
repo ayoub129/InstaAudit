@@ -1,4 +1,5 @@
 import type { ProfileData, InstagramApiUser, InstagramApiPostNode, RawPost } from "./types"
+import { trackScraperApiCall } from "@/lib/analytics/usage-tracker"
 
 const IG_APP_ID = "936619743392459"
 
@@ -36,6 +37,7 @@ async function rapidApiPost(
   path: string,
   body: Record<string, string>
 ): Promise<{ ok: boolean; status: number; json: any }> {
+  await trackScraperApiCall(`rapidapi:${path}`)
   const url = `https://${host}${path}`
   const params = new URLSearchParams(body).toString()
   const res = await fetch(url, {
@@ -156,6 +158,7 @@ function normalizeRapidApiProfile(data: any, posts: RawPost[]): ProfileData {
 }
 
 async function tryInstagramWebApi(username: string): Promise<ProfileData> {
+  await trackScraperApiCall("instagram:web_profile_info")
   const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`
 
   console.log(`[scraper] Fetching Instagram web API for @${username}`)

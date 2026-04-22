@@ -1,9 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 import {
   TrendingUp,
   Eye,
@@ -11,7 +20,8 @@ import {
   Target,
   Hash,
   ArrowUpDown,
-  Download,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react";
 import { AnalyticsInsights } from "./analytics-insights";
 import type { UserReportsOverview } from "@/lib/analytics/get-user-reports-overview";
@@ -23,40 +33,36 @@ type AnalyticsPageClientProps = {
   plan: PlanKey;
 };
 
-function toCsv(rows: Array<Record<string, string | number>>) {
-  if (!rows.length) return "";
-  const headers = Object.keys(rows[0]);
-  const lines = [
-    headers.join(","),
-    ...rows.map((row) =>
-      headers
-        .map((header) => {
-          const raw = String(row[header] ?? "");
-          const escaped = raw.replace(/"/g, '""');
-          return `"${escaped}"`;
-        })
-        .join(","),
-    ),
-  ];
-  return lines.join("\n");
-}
-
 export function AnalyticsPageClient({
   initialData,
   plan,
 }: AnalyticsPageClientProps) {
   const [data, setData] = useState<UserReportsOverview>(initialData);
   const [days, setDays] = useState<7 | 30 | 90>(30);
-  const [handle, setHandle] = useState("");
+  const latestHandle = initialData.recentAudits[0]?.handle?.toLowerCase() ?? "";
+  const [selectedHandle, setSelectedHandle] = useState(latestHandle);
+  const [handleDropdownOpen, setHandleDropdownOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [hasInitializedHandle, setHasInitializedHandle] = useState(false);
 
-  async function applyFilters() {
+  const availableHandles = useMemo(() => {
+    const handles = new Set<string>();
+    for (const item of initialData.recentAudits) {
+      if (item.handle) handles.add(item.handle.toLowerCase());
+    }
+    for (const item of initialData.topHandles) {
+      if (item.handle) handles.add(item.handle.toLowerCase());
+    }
+    return Array.from(handles);
+  }, [initialData.recentAudits, initialData.topHandles]);
+
+  async function fetchAnalytics(nextDays: 7 | 30 | 90, nextHandle: string) {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set("days", String(days));
-      if (handle.trim()) {
-        params.set("handle", handle.trim().replace(/^@/, "").toLowerCase());
+      params.set("days", String(nextDays));
+      if (nextHandle) {
+        params.set("handle", nextHandle);
       }
 
       const res = await fetch(`/api/reports/overview?${params.toString()}`, {
@@ -69,6 +75,28 @@ export function AnalyticsPageClient({
       setLoading(false);
     }
   }
+
+  async function handleDateRangeChange(nextDays: 7 | 30 | 90) {
+    setDays(nextDays);
+    await fetchAnalytics(nextDays, selectedHandle);
+  }
+
+  async function handleSelectHandle(nextHandle: string) {
+    const normalized = nextHandle.replace(/^@/, "").toLowerCase();
+    setSelectedHandle(normalized);
+    setHandleDropdownOpen(false);
+    await fetchAnalytics(days, normalized);
+  }
+
+  useEffect(() => {
+    if (hasInitializedHandle) return;
+    if (!selectedHandle) {
+      setHasInitializedHandle(true);
+      return;
+    }
+    setHasInitializedHandle(true);
+    void fetchAnalytics(days, selectedHandle);
+  }, [days, hasInitializedHandle, selectedHandle]);
 
   const stats = useMemo(
     () => [
@@ -114,33 +142,6 @@ export function AnalyticsPageClient({
     [data],
   );
 
-  function exportCsv() {
-    const trendRows = data.trend.map((row) => ({
-      type: "trend",
-      date: row.date,
-      handle: "",
-      score: row.avgScore,
-      audits: row.audits,
-      source: "",
-    }));
-    const recentRows = data.recentAudits.map((row) => ({
-      type: "recent_audit",
-      date: new Date(row.date).toISOString().slice(0, 10),
-      handle: row.handle,
-      score: row.score,
-      audits: "",
-      source: row.source,
-    }));
-    const csv = toCsv([...trendRows, ...recentRows]);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `analytics-${days}d${handle ? `-${handle.replace(/^@/, "")}` : ""}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
   return (
     <>
       <div className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border border-border/40 bg-card/50 p-4">
@@ -152,7 +153,9 @@ export function AnalyticsPageClient({
                 key={value}
                 variant={days === value ? "default" : "outline"}
                 size="sm"
-                onClick={() => setDays(value as 7 | 30 | 90)}
+                className="hover:scale-100 active:scale-100"
+                onClick={() => handleDateRangeChange(value as 7 | 30 | 90)}
+                disabled={loading}
               >
                 {value}d
               </Button>
@@ -161,25 +164,43 @@ export function AnalyticsPageClient({
         </div>
 
         <div className="min-w-[220px] flex-1 space-y-1">
-          <p className="text-xs text-muted-foreground">Handle filter</p>
-          <Input
-            value={handle}
-            onChange={(event) => setHandle(event.target.value)}
-            placeholder="@username"
-          />
+          <p className="text-xs text-muted-foreground">Account</p>
+          <Popover open={handleDropdownOpen} onOpenChange={setHandleDropdownOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={handleDropdownOpen}
+                className="w-full justify-between bg-background hover:scale-100 active:scale-100"
+                disabled={loading || availableHandles.length === 0}
+              >
+                {selectedHandle ? `@${selectedHandle}` : "Select account"}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[320px] p-0" align="start">
+              <Command>
+                <CommandInput placeholder="Search handle..." />
+                <CommandList>
+                  <CommandEmpty>No handles found.</CommandEmpty>
+                  <CommandGroup>
+                    {availableHandles.map((handle) => (
+                      <CommandItem key={handle} value={handle} onSelect={() => void handleSelectHandle(handle)}>
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            selectedHandle === handle ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                        @{handle}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
-
-        <Button onClick={applyFilters} disabled={loading}>
-          {loading ? "Applying..." : "Apply filters"}
-        </Button>
-        <Button
-          variant="outline"
-          onClick={exportCsv}
-          className="gap-2 bg-transparent"
-        >
-          <Download className="h-4 w-4" />
-          Export CSV
-        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -211,7 +232,6 @@ export function AnalyticsPageClient({
       <AnalyticsInsights
         trend={data.trend}
         scoreDistribution={data.scoreDistribution}
-        sourceBreakdown={data.sourceBreakdown}
         weakMetrics={data.weakMetrics}
         topHandles={data.topHandles}
         recentAudits={data.recentAudits}

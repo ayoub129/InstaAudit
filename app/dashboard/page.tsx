@@ -28,9 +28,18 @@ type AuditSummary = {
   createdAt: string
 }
 
+const AUDIT_PHASES = [
+  "Starting audit",
+  "Fetching profile data",
+  "Analyzing posts and reels",
+  "Scoring performance modules",
+  "Generating AI tips",
+  "Finalizing your report",
+]
+
 export default function DashboardPage() {
   const router = useRouter()
-  const { data: session } = useSession()
+  const { data: session, status: sessionStatus } = useSession()
 
   const [auditData, setAuditData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
@@ -38,9 +47,11 @@ export default function DashboardPage() {
   const [lastAuditAt, setLastAuditAt] = useState<string | null>(null)
   const [instagramConnected] = useState(false)
   const [usedAudits, setUsedAudits] = useState(0)
-  const [averageScore, setAverageScore] = useState<number | null>(null)
   const [historyAudits, setHistoryAudits] = useState<AuditSummary[]>([])
   const [auditError, setAuditError] = useState<string | null>(null)
+  const [auditProgress, setAuditProgress] = useState(0)
+  const [auditPhaseIndex, setAuditPhaseIndex] = useState(0)
+  const [isDashboardLoading, setIsDashboardLoading] = useState(true)
 
   const subscriptionPlan = (session?.user?.subscriptionPlan ?? "free") as PlanKey
   const subscriptionStatus = session?.user?.subscriptionStatus ?? "inactive"
@@ -80,6 +91,24 @@ export default function DashboardPage() {
     : `${remainingAudits} remaining`
 
   useEffect(() => {
+    if (!loading) return
+
+    const interval = setInterval(() => {
+      setAuditProgress((prev) => {
+        const next = Math.min(prev + (prev < 40 ? 6 : prev < 75 ? 4 : 2), 94)
+        const phase = Math.min(
+          Math.floor((next / 100) * AUDIT_PHASES.length),
+          AUDIT_PHASES.length - 1,
+        )
+        setAuditPhaseIndex(phase)
+        return next
+      })
+    }, 550)
+
+    return () => clearInterval(interval)
+  }, [loading])
+
+  useEffect(() => {
     async function loadHistory() {
       try {
         const [historyRes, overviewRes] = await Promise.all([
@@ -93,13 +122,8 @@ export default function DashboardPage() {
         setHistoryAudits(audits)
 
         if (audits.length > 0) {
-          const avg = Math.round(
-            audits.reduce((sum, item) => sum + Number(item.overallScore || 0), 0) / audits.length,
-          )
-          setAverageScore(avg)
           setLastAuditAt(new Date(audits[0].createdAt).toLocaleDateString())
         } else {
-          setAverageScore(null)
           setLastAuditAt(null)
         }
 
@@ -110,15 +134,21 @@ export default function DashboardPage() {
         }
       } catch {
         // Keep dashboard usable even if history fetch fails.
+      } finally {
+        setIsDashboardLoading(false)
       }
     }
 
     loadHistory()
   }, [])
 
+  const showInitialLoadingState = sessionStatus === "loading" || isDashboardLoading
+
   const handleAudit = async (username: string) => {
     setLoading(true)
     setAuditError(null)
+    setAuditProgress(5)
+    setAuditPhaseIndex(0)
 
     try {
       const res = await fetch("/api/audits/run", {
@@ -136,15 +166,14 @@ export default function DashboardPage() {
         return
       }
 
+      setAuditPhaseIndex(AUDIT_PHASES.length - 1)
+      setAuditProgress(100)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
       setAuditData(data.result)
       setHasAudited(true)
       setLastAuditAt("Just now")
       setUsedAudits((prev) => (isUnlimited ? prev : prev + 1))
-      setAverageScore((prev) => {
-        if (prev === null) return data.result?.overallScore ?? null
-        const count = Math.max(historyAudits.length, 0)
-        return Math.round((prev * count + (data.result?.overallScore ?? 0)) / (count + 1))
-      })
       setHistoryAudits((prev) => [
         {
           id: String(data.auditId ?? `new-${Date.now()}`),
@@ -159,6 +188,10 @@ export default function DashboardPage() {
       setAuditError("Something went wrong while running the audit.")
     } finally {
       setLoading(false)
+      setTimeout(() => {
+        setAuditProgress(0)
+        setAuditPhaseIndex(0)
+      }, 200)
     }
   }
 
@@ -181,8 +214,8 @@ export default function DashboardPage() {
       icon: FileText,
     },
     {
-      title: "Average score",
-      value: averageScore !== null ? `${averageScore}/100` : "—",
+      title: "Audits this month",
+      value: `${usedAudits}`,
       icon: LineChart,
     },
     {
@@ -272,114 +305,144 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <section>
-            {!hasAudited ? (
-              <ProfileInput
-                onAudit={handleAudit}
-                loading={loading}
-                plan={subscriptionPlan}
-                auditsRemainingText={auditsRemainingText}
-                canRunAudit={canRunAudit}
-                canConnectInstagram={canConnectInstagram}
-                instagramConnected={instagramConnected}
-                onConnectInstagram={() => router.push("/settings")}
-              />
-            ) : (
-              <AuditResults
-                data={auditData}
-                onNewAudit={() => setHasAudited(false)}
-                currentPlan={subscriptionPlan}
-              />
-            )}
-          </section>
-
-          {!hasAudited && (
+          {showInitialLoadingState ? (
+            <section
+              className="rounded-3xl border border-border/50 bg-card/70 p-8 text-sm text-muted-foreground shadow-sm backdrop-blur-xl"
+              aria-busy="true"
+            >
+              Loading your dashboard...
+            </section>
+          ) : (
             <>
-              <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {stats.map((item, index) => {
-                  const Icon = item.icon
+              <section>
+                {!hasAudited ? (
+                  <ProfileInput
+                    onAudit={handleAudit}
+                    loading={loading}
+                    auditProgress={auditProgress}
+                    auditPhase={AUDIT_PHASES[auditPhaseIndex]}
+                    plan={subscriptionPlan}
+                    auditsRemainingText={auditsRemainingText}
+                    canRunAudit={canRunAudit}
+                    canConnectInstagram={canConnectInstagram}
+                    instagramConnected={instagramConnected}
+                    onConnectInstagram={() => router.push("/settings")}
+                  />
+                ) : (
+                  <AuditResults
+                    data={auditData}
+                    onNewAudit={() => setHasAudited(false)}
+                    currentPlan={subscriptionPlan}
+                  />
+                )}
+              </section>
 
-                  return (
-                    <div
-                      key={index}
-                      className="rounded-3xl border border-border/50 bg-card/70 p-5 shadow-sm backdrop-blur-xl"
-                    >
-                      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                        <Icon className="h-5 w-5" />
+              {!hasAudited && (
+                <>
+                  <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    {stats.map((item, index) => {
+                      const Icon = item.icon
+
+                      return (
+                        <div
+                          key={index}
+                          className="rounded-3xl border border-border/50 bg-card/70 p-5 shadow-sm backdrop-blur-xl"
+                        >
+                          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                            <Icon className="h-5 w-5" />
+                          </div>
+
+                          <p className="text-sm text-muted-foreground">{item.title}</p>
+                          <p className="mt-2 text-lg font-semibold capitalize text-foreground">
+                            {item.value}
+                          </p>
+                        </div>
+                      )
+                    })}
+                  </section>
+
+                  <section className="mt-8 grid gap-6 xl:grid-cols-[1.3fr_0.9fr]">
+                    <div className="rounded-3xl border border-border/50 bg-card/70 p-6 shadow-sm backdrop-blur-xl">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        Recent activity
                       </div>
 
-                      <p className="text-sm text-muted-foreground">{item.title}</p>
-                      <p className="mt-2 text-lg font-semibold capitalize text-foreground">
-                        {item.value}
+                      <h2 className="mt-3 text-2xl font-semibold text-foreground">
+                        Recent audits
+                      </h2>
+
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        Your latest audit reports will appear here so you can quickly reopen them.
                       </p>
+
+                      <div className="mt-6">
+                        {historyAudits.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-border bg-background/40 p-6 text-sm text-muted-foreground">
+                            No audits yet. Run your first audit above to see reports here.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {historyAudits.slice(0, 4).map((audit) => (
+                              <Link
+                                key={audit.id}
+                                href={`/dashboard/history/${audit.id}`}
+                                className="flex items-center justify-between rounded-2xl border border-border bg-background/60 px-4 py-3 text-sm transition-colors hover:bg-primary/5"
+                              >
+                                <span className="font-medium text-foreground">@{audit.handle}</span>
+                                <span className="text-muted-foreground">{audit.overallScore}/100</span>
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )
-                })}
-              </section>
 
-              <section className="mt-8 grid gap-6 xl:grid-cols-[1.3fr_0.9fr]">
-                <div className="rounded-3xl border border-border/50 bg-card/70 p-6 shadow-sm backdrop-blur-xl">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Sparkles className="h-4 w-4 text-primary" />
-                    Recent activity
-                  </div>
+                    <div className="rounded-3xl border border-border/50 bg-card/70 p-6 shadow-sm backdrop-blur-xl">
+                      <h2 className="text-2xl font-semibold text-foreground">
+                        Action center
+                      </h2>
 
-                  <h2 className="mt-3 text-2xl font-semibold text-foreground">
-                    Recent audits
-                  </h2>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        Quick actions to keep your account active and your audits moving.
+                      </p>
 
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    Your latest audit reports will appear here so you can quickly reopen them.
-                  </p>
+                      <div className="mt-6 space-y-3">
+                        <div className="rounded-2xl border border-border bg-background/60 p-4">
+                          <p className="text-sm text-muted-foreground">Subscription status</p>
+                          <p className="mt-1 text-sm font-medium capitalize text-foreground">
+                            {subscriptionStatus}
+                          </p>
+                        </div>
 
-                  <div className="mt-6">
-                    {historyAudits.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-border bg-background/40 p-6 text-sm text-muted-foreground">
-                        No audits yet. Run your first audit above to see reports here.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {historyAudits.slice(0, 4).map((audit) => (
-                          <Link
-                            key={audit.id}
-                            href={`/dashboard/history/${audit.id}`}
-                            className="flex items-center justify-between rounded-2xl border border-border bg-background/60 px-4 py-3 text-sm transition-colors hover:bg-primary/5"
+                        <div className="rounded-2xl border border-border bg-background/60 p-4">
+                          <p className="text-sm text-muted-foreground">Need more audits?</p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="mt-3 w-full rounded-xl"
+                            onClick={() => router.push("/pricing")}
                           >
-                            <span className="font-medium text-foreground">@{audit.handle}</span>
-                            <span className="text-muted-foreground">{audit.overallScore}/100</span>
-                          </Link>
-                        ))}
+                            View plans
+                          </Button>
+                        </div>
+
+                        <div className="rounded-2xl border border-border bg-background/60 p-4">
+                          <p className="text-sm text-muted-foreground">View all reports</p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="mt-3 w-full rounded-xl"
+                            onClick={() => router.push("/dashboard/history")}
+                          >
+                            Open audit history
+                          </Button>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-border/50 bg-card/70 p-6 shadow-sm backdrop-blur-xl">
-                  <h2 className="text-2xl font-semibold text-foreground">
-                    Quick notes
-                  </h2>
-
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    Focus on clarity first. Profiles usually improve fastest when the bio,
-                    offer, and call to action are easier to understand.
-                  </p>
-
-                  <div className="mt-6 space-y-3">
-                    {[
-                      "Make your bio explain who you help and what result you provide.",
-                      "Use stronger first lines in captions to stop the scroll.",
-                      "Keep your content direction more consistent from post to post.",
-                    ].map((tip, i) => (
-                      <div
-                        key={i}
-                        className="rounded-2xl border border-border bg-background/60 p-4 text-sm text-muted-foreground"
-                      >
-                        {tip}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
+                    </div>
+                  </section>
+                </>
+              )}
             </>
           )}
         </div>

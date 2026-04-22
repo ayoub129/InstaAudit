@@ -29,6 +29,7 @@ import type {
   RapidApiUserReelsResult,
   RapidApiUserTaggedPostsResult,
 } from "./types"
+import { trackScraperApiCall } from "@/lib/analytics/usage-tracker"
 
 export class RapidApiClientError extends Error {
   constructor(
@@ -101,6 +102,7 @@ async function rapidApiPost(
   path: string,
   body: Record<string, string>,
 ): Promise<{ ok: boolean; status: number; json: unknown }> {
+  await trackScraperApiCall(`rapidapi:${path}`)
   const url = `https://${host}${path}`
   const params = new URLSearchParams(body).toString()
   const res = await fetch(url, {

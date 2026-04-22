@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useSession } from "next-auth/react"
-import { Bell, Moon, Sun, UserCircle2 } from "lucide-react"
+import { Moon, Sun, UserCircle2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
@@ -60,10 +60,6 @@ export function DashboardNav() {
                   )}
                 </Button>
               )}
-
-              <Button variant="ghost" size="icon" className="rounded-xl">
-                <Bell className="h-4 w-4" />
-              </Button>
 
               {/* Profile avatar / icon */}
               <Link

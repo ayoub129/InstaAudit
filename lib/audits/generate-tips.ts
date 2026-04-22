@@ -3,6 +3,7 @@ import type { ProfileData } from "@/lib/instagram/types"
 import type { ScoredMetrics } from "@/lib/audits/metrics"
 import type { PlanKey } from "@/lib/plans/plan-config"
 import { generateRuleBasedTips } from "./tips/rule-based"
+import { trackOpenAiApiCall } from "@/lib/analytics/usage-tracker"
 
 export interface DayPlan {
   day: string
@@ -100,9 +101,11 @@ async function generateAiTips(profile: ProfileData, metrics: ScoredMetrics): Pro
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured")
   const client = new OpenAI({ apiKey })
+  const modelName = process.env.OPENAI_AUDIT_MODEL || "gpt-4o-mini"
+  await trackOpenAiApiCall(modelName)
 
   const response = await client.chat.completions.create({
-    model: process.env.OPENAI_AUDIT_MODEL || "gpt-4o-mini",
+    model: modelName,
     messages: [{ role: "user", content: buildPrompt(profile, metrics) }],
     temperature: 0.3,
     max_tokens: 800,

@@ -2,6 +2,7 @@ import OpenAI from "openai"
 import type { ProfileData } from "@/lib/instagram/types"
 import type { ScoredMetrics } from "@/lib/audits/metrics"
 import type { PlanKey } from "@/lib/plans/plan-config"
+import { trackOpenAiApiCall } from "@/lib/analytics/usage-tracker"
 
 export interface DayPlan {
   day: string
@@ -100,6 +101,7 @@ export async function generateAiTips(
   }
 
   const client = new OpenAI({ apiKey })
+  await trackOpenAiApiCall("gpt-4o-mini")
 
   const prompt = buildPrompt(profile, metrics, plan)
 

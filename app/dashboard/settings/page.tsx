@@ -19,13 +19,11 @@ import { DashboardNav } from "@/components/dashboard/dashboard-nav"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
-type NotifKey = "emailNotifications" | "auditAlerts" | "weeklyDigest" | "productUpdates"
+type NotifKey = "emailNotifications" | "productUpdates"
 type Notifs = Record<NotifKey, boolean>
 
 const DEFAULT_NOTIFS: Notifs = {
   emailNotifications: true,
-  auditAlerts: true,
-  weeklyDigest: false,
   productUpdates: true,
 }
 
@@ -116,8 +114,6 @@ export default function SettingsPage() {
 
   const notifItems: { key: NotifKey; label: string; description: string }[] = [
     { key: "emailNotifications", label: "Email notifications", description: "Receive important account updates via email" },
-    { key: "auditAlerts", label: "Audit completion alerts", description: "Get notified when an audit finishes" },
-    { key: "weeklyDigest", label: "Weekly digest", description: "A summary of your audit activity every week" },
     { key: "productUpdates", label: "Product updates", description: "New features and improvements from InstaAudit" },
   ]
 
